@@ -574,6 +574,9 @@ class TemplateDB:
         self._labels: List[int] = []
         self._raw: List[np.ndarray] = []
         self._matrix: Optional[np.ndarray] = None  # (N, D) float32 正規化後的快取
+        self._coarse_matrix: Optional[np.ndarray] = None  # 粗篩用的降維版本
+        self._label_arr: Optional[np.ndarray] = None
+        self.coarse = True  # False = 永遠全庫暴力比對（測試對照用）
 
     def __len__(self) -> int:
         return len(self._labels)
@@ -590,6 +593,7 @@ class TemplateDB:
             return None
         if self._matrix is None:
             self._matrix = np.stack([normalize(r) for r in self._raw])
+            self._coarse_matrix = None
         return self._matrix
 
     def add(self, label: int, raw: np.ndarray, dedup: float = 4.0) -> bool:
@@ -619,14 +623,49 @@ class TemplateDB:
         self._raw.clear()
         self._matrix = None
 
+    # 粗篩：樣板庫超過 COARSE_MIN 張才啟用。先用 1/COARSE_STRIDE 的維度挑出前
+    # COARSE_KEEP 名，再對這幾張精算。每格 1453 張×1536 維的全庫比對佔辨識時間 9 成，
+    # 這樣大約快 3~4 倍。結果與全庫暴力比對一致性見 test_vision.py。
+    COARSE_MIN = 200
+    COARSE_STRIDE = 4
+    COARSE_KEEP = 24     # 粗篩總排名前幾名
+    COARSE_RIVALS = 12   # 另外保證納入「標籤跟粗篩第一名不同」的前幾名（算 margin 要用）
+
+    def _rank(self, matrix: np.ndarray, v: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """回傳 (候選索引由近到遠, 對應 dists 陣列)。dists 只有候選索引上的值有意義。"""
+        n = matrix.shape[0]
+        if not self.coarse or n < self.COARSE_MIN:
+            return self._rank_full(matrix, v)
+
+        if self._coarse_matrix is None or self._coarse_matrix.shape[0] != n:
+            self._coarse_matrix = np.ascontiguousarray(matrix[:, ::self.COARSE_STRIDE])
+            self._label_arr = np.asarray(self._labels, dtype=np.int16)
+        rough = np.abs(self._coarse_matrix - v[:, ::self.COARSE_STRIDE]).sum(axis=1)
+        top = np.argpartition(rough, self.COARSE_KEEP)[:self.COARSE_KEEP]
+        lead = self._label_arr[int(top[np.argmin(rough[top])])]
+        other = np.flatnonzero(self._label_arr != lead)
+        if other.size < self.COARSE_RIVALS:
+            return self._rank_full(matrix, v)
+        rivals = other[np.argpartition(rough[other], self.COARSE_RIVALS)[:self.COARSE_RIVALS]]
+        keep = np.unique(np.concatenate([top, rivals]))
+        exact = np.abs(matrix[keep] - v).mean(axis=1)
+        order_local = np.argsort(exact)
+        dists = np.full(n, np.inf, dtype=np.float32)
+        dists[keep] = exact
+        return keep[order_local], dists
+
+    @staticmethod
+    def _rank_full(matrix: np.ndarray, v: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        dists = np.abs(matrix - v).mean(axis=1)
+        return np.argsort(dists), dists
+
     def match(self, raw: np.ndarray) -> Match:
         matrix = self._matrix_or_build()
         if matrix is None:
             return Match(None, float("inf"), 0.0, "empty")
 
         v = normalize(raw).reshape(1, -1)
-        dists = np.abs(matrix - v).mean(axis=1)
-        order = np.argsort(dists)
+        order, dists = self._rank(matrix, v)
 
         best_i = int(order[0])
         best_label = self._labels[best_i]

@@ -466,7 +466,9 @@ class Worker(threading.Thread):
                     status = Status("error", f"內部錯誤：{type(e).__name__}: {e}")
                 poll = self.engine.cfg.poll_ms
             self.out.put(status)
-            time.sleep(max(0.05, poll / 1000.0))
+            # 盤面還在動（等「連續兩次讀到一樣」）時不用客氣：這段時間每多睡一拍，
+            # 每一步就多等一拍。穩定下來之後才照使用者設的偵測間隔慢下來。
+            time.sleep(0.02 if status.kind == "settling" else max(0.05, poll / 1000.0))
 
 
 # ---------------------------------------------------------------- 框選範圍

@@ -386,6 +386,32 @@ def main():
     cal = V.calibration_from_corners(box, *tilted)
     check("點歪一大截 → skew 明顯變大", cal.skew > 10, f"{cal.skew:.1f}")
 
+    print("15) 大樣板庫粗篩：結果必須跟全庫暴力比對一致（只是更快）")
+    rng = np.random.default_rng(15)
+    protos = {lbl: rng.integers(0, 256, V.RAW_LEN) for lbl in range(1, 11)}
+    db = V.TemplateDB()
+    for lbl, proto in protos.items():
+        for _ in range(60):  # 600 張 > COARSE_MIN，模擬待機動畫的多幀樣板
+            db.add(lbl, np.clip(proto + rng.normal(0, 10, V.RAW_LEN), 0, 255).astype(np.uint8), dedup=0.0)
+    check("樣板庫夠大才會走粗篩", len(db) >= V.TemplateDB.COARSE_MIN, str(len(db)))
+    mismatch = 0
+    trials = 300
+    for t in range(trials):
+        proto = protos[1 + t % 10]
+        q = np.clip(proto * rng.uniform(0.85, 1.15) + rng.normal(0, 8, V.RAW_LEN) + rng.uniform(-25, 25), 0, 255)
+        if t % 10 == 9:  # 一部分是兩個標籤的混合，逼出「分不清」的判定
+            other = protos[1 + (t + 3) % 10]
+            q = np.clip(0.5 * proto + 0.5 * other, 0, 255)
+        q = q.astype(np.uint8)
+        db.coarse = True
+        a = db.match(q)
+        db.coarse = False
+        b = db.match(q)
+        if (a.label, a.rejected) != (b.label, b.rejected) or abs(a.distance - b.distance) > 0.5:  # 粗篩可能漏掉同標籤裡更近的那張，差零點幾無妨；判定不能變
+            mismatch += 1
+    db.coarse = True
+    check(f"{trials} 筆查詢，粗篩與暴力比對的判定全部一致", mismatch == 0, f"不一致 {mismatch} 筆")
+
     print()
     if _failures:
         print(f"有 {len(_failures)} 項失敗 ❌")

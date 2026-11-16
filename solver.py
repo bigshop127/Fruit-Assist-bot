@@ -333,6 +333,7 @@ class Solver:
         for depth in range(self.min_depth, self.max_depth + 1):
             cache: Dict[int, Tuple[int, float]] = {}
             scores: Dict[int, float] = {}
+            iter_started = time.perf_counter()
             try:
                 for move, nb in legal.items():
                     scores[move] = self._chance_node(nb, depth - 1, 1.0, cache)
@@ -340,8 +341,14 @@ class Solver:
                 break
             best_scores = scores
             reached = depth
+            now = time.perf_counter()
             # 每加深一層成本大約是前一層的十倍，用掉三成預算就別再往下探了
-            if time.perf_counter() - started > time_budget * 0.3:
+            if now - started > time_budget * 0.3:
+                break
+            # 實測（2026-11-17）下一層成本約是這一層的 3~7 倍。剩下的時間若連 3.5 倍都
+            # 不夠，下一層幾乎一定跑到超時才中止——白白燒掉整份預算、結果還是丟掉。
+            # 與其空等，直接交出現有的完整結果，建議方向完全一樣，只是早點回來。
+            if (now - iter_started) * 3.5 > self._deadline - now:
                 break
 
         if not best_scores:  # 連最淺的一輪都沒跑完 → 退回單層評估
