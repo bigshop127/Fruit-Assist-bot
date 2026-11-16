@@ -628,7 +628,7 @@ class TemplateDB:
     # 這樣大約快 3~4 倍。結果與全庫暴力比對一致性見 test_vision.py。
     COARSE_MIN = 200
     COARSE_STRIDE = 4
-    COARSE_KEEP = 24     # 粗篩總排名前幾名
+    COARSE_KEEP = 48     # 粗篩總排名前幾名
     COARSE_RIVALS = 12   # 另外保證納入「標籤跟粗篩第一名不同」的前幾名（算 margin 要用）
 
     def _rank(self, matrix: np.ndarray, v: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
