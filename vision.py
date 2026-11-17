@@ -31,6 +31,7 @@ from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from i18n import tr as _t
 
 # 縮圖邊長。整格與徽章各一塊，所以原始特徵長度是 THUMB*THUMB*3*2。
 THUMB = 16
@@ -278,7 +279,7 @@ def calibration_from_corners(
     （拿來反推 inset —— 格距扣掉格線與間隙之後，真正該取樣的範圍有多寬）。
     """
     if rows < 2 or cols < 2:
-        raise ValueError("盤面至少要 2x2")
+        raise ValueError(_t("盤面至少要 2x2"))
 
     tl = (top_left_box.left + top_left_box.width / 2.0,
           top_left_box.top + top_left_box.height / 2.0)
@@ -293,10 +294,10 @@ def calibration_from_corners(
     pitch_y_right = (br[1] - tr[1]) / (rows - 1)
 
     if min(pitch_x_top, pitch_x_bottom, pitch_y_left, pitch_y_right) <= 0:
-        raise ValueError(
+        raise ValueError(_t(
             "四個角落的相對位置不合理（右邊的點在左邊、或下面的點在上面）。"
             "請確認有依照「右上 → 右下 → 左下」的順序點選。"
-        )
+        ))
 
     pitch_x = (pitch_x_top + pitch_x_bottom) / 2.0
     pitch_y = (pitch_y_left + pitch_y_right) / 2.0

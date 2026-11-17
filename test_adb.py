@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import sys
 from typing import List
@@ -18,7 +19,10 @@ from typing import List
 import numpy as np
 from PIL import Image
 
-import adb as ADB
+# 這支測試會比對中文訊息字樣，固定用中文介面跑（英文版由 test_i18n.py 負責）
+os.environ["FRUIT2048_LANG"] = "zh"
+
+import adb as ADB  # noqa: E402
 import control as C
 import vision as V
 

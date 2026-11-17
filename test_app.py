@@ -7,6 +7,8 @@
 """
 
 import os
+# 這支測試會比對中文訊息字樣，固定用中文介面跑（英文版由 test_i18n.py 負責）
+os.environ["FRUIT2048_LANG"] = "zh"
 import shutil
 import sys
 import tempfile

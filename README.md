@@ -359,12 +359,15 @@ python debug_grid.py 你的截圖.png 56 56 450 452   # 指定範圍
 | `adb.py` | 手機版（PC 遙控）擷取／操控：透過 `adb` 截圖、送滑動手勢 |
 | `rish.py` | 手機本地版擷取／操控：透過 Shizuku 的 `rish` 本機殼層執行 screencap／滑動，只給跑在 Termux 上的 Python 用 |
 | `mobile_main.py` | 手機本地版主迴圈：沒有 UI，純文字輸出，`python mobile_main.py` 直接在 Termux 裡執行 |
+| `i18n.py` | 介面語言：`tr("中文原文")`＋英文對照表 `EN`；語言＝環境變數 `FRUIT2048_LANG` → config.json `language` → 打包預設 → 中文 |
 | `debug_grid.py` | 切格對位除錯工具 |
 | `tools/launch.ps1` | 桌面捷徑指向這支 |
+| `tools/build_exe.ps1` | 打包免安裝 exe：中文版 `水果2048輔助器.exe`＋英文版 `Fruit2048Assistant.exe`（`-Lang zh/en/all`） |
 | `config.json` | 你的設定（校準範圍等），自動產生 |
 | `templates.json` | 學過的水果外觀，自動產生 |
-| `test_*.py` | 驗證用，`python test_solver.py` 等七支 |
+| `test_*.py` | 驗證用，`python test_solver.py` 等八支（`test_i18n.py` 檢查每句介面文字都有英文、佔位變數對得上） |
 | `testdata/board.png` | 測試用的真實盤面截圖，多支測試都吃這張 |
+| `testdata/board_small.png` | 小視窗（盤面 345px）真實截圖，測「同一顆水果換位置差 1px」 |
 | `testdata/shop_*.png` | 商店介面的水果圖，8～12 號長什麼樣、兩位數徽章長什麼樣 |
 
 ### 重建桌面捷徑
@@ -403,6 +406,11 @@ $s.Save()
 
 **第一層：自學式樣板比對。**模擬器每次把同一顆水果畫出來的像素幾乎完全一樣，
 所以「縮圖比最近鄰」比 OCR 準也快得多。第一次人工標一輪，之後永久沿用。
+
+**第一層半：挪幾 px 再比。**（2026-11-18 加）格寬通常不是整數（小視窗 86.25px），
+每一欄、每一列切下來差 0~1px，號碼徽章縮圖對 1px 很敏感：右上角跟左下角的同一顆西瓜
+距離差到 26 而認不得，使用者只好每個位置都標一次。認不得的格子會把切框挪 ±2px
+（24 種）重比，門檻一點都不放寬；挪出來的結果不寫進樣板庫。測資 `testdata/board_small.png`。
 
 **第二層：讀格子上印的號碼。**第一層認不得的格子，才去讀徽章上的數字。
 讀得出來就當場採用並收進樣板庫 —— 所以合成出新水果時不會停下來等人標。
@@ -592,3 +600,15 @@ grabber 建構抽成 `Engine._build_grabber()`，只在 `__init__` 跟明確呼�
 殼子沒了之後才跑，跳出一堆「main thread is not in main loop」——是 Python
 直譯器關閉時的既有 GC 順序問題，不影響測試結果（`_failures` 不會被算進去），
 但看起來很像測試爆炸，不要被嚇到去查一個沒有壞的地方。
+
+### 中英雙語與發佈（2026-11-18）
+
+- 介面文字一律寫成 `tr("中文原文")`（`vision.py`／`adb.py` 裡是 `_t`，因為 `tr` 在那邊是「右上角」的變數名）。
+  有變數用具名佔位 `tr("已走 {n} 步", n=played)`，**不要再用 f-string 寫中文**，不然英文版翻不到。
+- 新增或改一句中文，就要在 `i18n.py` 的 `EN` 補英文；`python test_i18n.py` 會抓漏翻、佔位不一致、殘留中文。
+  `python test_i18n.py --dump` 列出還沒翻的句子。
+- 其他測試會比對中文字樣，開頭固定 `FRUIT2048_LANG=zh`。
+- 發佈：`toolsuild_exe.ps1` 打兩支 exe → 各自跟 `templates.json`＋說明 txt 包成
+  `Fruit2048Assistant_Chinese.zip`／`Fruit2048Assistant_English.zip` → 上傳 GitHub Release
+  （tag `fruit2048-vX.Y.Z`）。首頁 README 的下載連結是 `releases/latest/download/<檔名>`，檔名別改。
+  Release 檔名用英文：GitHub 會把非 ASCII 的附件檔名改掉。

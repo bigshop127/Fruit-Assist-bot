@@ -21,6 +21,7 @@ from PIL import Image
 
 import control as C
 import vision as V
+from i18n import tr as _t
 
 # Windows 上跑 subprocess 預設會跳出一個黑色主控台視窗，adb 每次呼叫都跳一下很擾人。
 _CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
@@ -50,11 +51,11 @@ def find_adb() -> str:
     for c in candidates:
         if c and os.path.exists(c):
             return c
-    raise AdbError(
+    raise AdbError(_t(
         "找不到 adb。請安裝 Android SDK Platform-Tools"
         "（https://developer.android.com/tools/releases/platform-tools），"
         "並確定 adb.exe 在 PATH 上。"
-    )
+    ))
 
 
 def _run(adb_path: str, *args: str, timeout: float = 10.0) -> subprocess.CompletedProcess:
@@ -64,9 +65,9 @@ def _run(adb_path: str, *args: str, timeout: float = 10.0) -> subprocess.Complet
             creationflags=_CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired as e:
-        raise AdbError(f"adb 沒回應（{timeout:.0f} 秒逾時）：{' '.join(args)}") from e
+        raise AdbError(_t("adb 沒回應（{t:.0f} 秒逾時）：{cmd}", t=timeout, cmd=" ".join(args))) from e
     except OSError as e:
-        raise AdbError(f"執行 adb 失敗：{e}") from e
+        raise AdbError(_t("執行 adb 失敗：{e}", e=e)) from e
 
 
 def list_devices(adb_path: Optional[str] = None) -> List[Tuple[str, str]]:
@@ -94,22 +95,23 @@ def pick_device(adb_path: Optional[str] = None, serial: Optional[str] = None) ->
         for s, state in devices:
             if s == serial:
                 if state != "device":
-                    raise AdbError(f"裝置「{serial}」狀態是「{state}」，不是「device」"
-                                   f"（多半要在手機螢幕上按一下允許 USB 偵錯）。")
+                    raise AdbError(_t("裝置「{serial}」狀態是「{state}」，不是「device」"
+                                      "（多半要在手機螢幕上按一下允許 USB 偵錯）。",
+                                      serial=serial, state=state))
                 return serial
-        raise AdbError(f"adb 現在看不到裝置「{serial}」，確認線有接好、手機有開 USB 偵錯。")
+        raise AdbError(_t("adb 現在看不到裝置「{serial}」，確認線有接好、手機有開 USB 偵錯。", serial=serial))
 
     ready = [s for s, state in devices if state == "device"]
     if len(ready) == 1:
         return ready[0]
     if not ready:
         if devices:
-            detail = "、".join(f"{s}（{state}）" for s, state in devices)
-            raise AdbError(f"adb 看得到裝置但都還沒授權：{detail}。"
-                           f"檢查手機螢幕，同意「允許 USB 偵錯」。")
-        raise AdbError("adb 沒看到任何裝置。確認手機有接 USB 傳輸線、已開啟「USB 偵錯」。")
-    raise AdbError(f"adb 看到 {len(ready)} 台已授權的裝置，"
-                   f"請在設定裡指定要用哪一台的序號：{', '.join(ready)}")
+            detail = _t("、").join(f"{s}（{state}）" for s, state in devices)
+            raise AdbError(_t("adb 看得到裝置但都還沒授權：{detail}。"
+                              "檢查手機螢幕，同意「允許 USB 偵錯」。", detail=detail))
+        raise AdbError(_t("adb 沒看到任何裝置。確認手機有接 USB 傳輸線、已開啟「USB 偵錯」。"))
+    raise AdbError(_t("adb 看到 {n} 台已授權的裝置，請在設定裡指定要用哪一台的序號：{serials}",
+                      n=len(ready), serials=", ".join(ready)))
 
 
 def screen_size(adb_path: str, serial: str) -> Tuple[int, int]:

@@ -63,6 +63,7 @@ import adb as ADB  # noqa: E402
 import control as C  # noqa: E402
 import solver as S  # noqa: E402
 import vision as V  # noqa: E402
+from i18n import tr  # noqa: E402
 
 
 # ---------------------------------------------------------------- 外觀
@@ -126,6 +127,10 @@ class Config:
     # -- 畫面來源：screen＝PC 模擬器截圖（原本的路），adb＝USB 接實體手機 --
     capture_source: str = "screen"
     adb_serial: Optional[str] = None    # 多台裝置時指定序號；留白就自動挑「唯一一台已授權」的
+
+    # 介面語言 "zh" / "en"；None＝跟著下載的版本（中文版 exe / 英文版 exe）。
+    # 實際讀取在 i18n.py（啟動當下就要決定），這裡只是讓存檔時不會把它吃掉。
+    language: Optional[str] = None
 
     @classmethod
     def load(cls) -> "Config":
@@ -294,8 +299,8 @@ class Engine:
         hwnd = C.find_window(anchor["title"])
         rect = C.window_rect(hwnd) if hwnd else None
         if rect is None or C.window_is_minimized(hwnd):
-            return None, (f"找不到視窗「{anchor['title']}」——可能被關掉或縮到最小了。"
-                          f"還原視窗就會自動接回去繼續玩。")
+            return None, tr("找不到視窗「{title}」——可能被關掉或縮到最小了。還原視窗就會自動接回去繼續玩。",
+                         title=anchor["title"])
         base = self.region or V.Region.from_dict(self.cfg.region)
         left, top, _, _ = rect
         return V.Region(left + anchor["dx"], top + anchor["dy"], base.width, base.height), None
@@ -303,10 +308,10 @@ class Engine:
     def step(self) -> Status:
         if self.autoplay and C.panic_pressed(self.cfg.panic_key):
             self.stop_autoplay()
-            return self._status("stopped", f"偵測到 {self.cfg.panic_key}，自動操控已停止。")
+            return self._status("stopped", tr("偵測到 {key}，自動操控已停止。", key=self.cfg.panic_key))
 
         if self.region is None:
-            return self._status("waiting", "還沒校準。按下方的「① 校準盤面」框出遊戲的 4x4 區域。")
+            return self._status("waiting", tr("還沒校準。按下方的「① 校準盤面」框出遊戲的 4x4 區域。"))
 
         live_region, track_err = self._track_region()
         if track_err:
@@ -317,7 +322,7 @@ class Engine:
             img = self.grabber.grab(self.region)
         except (ValueError, OSError) as e:
             self.stop_autoplay()
-            return self._status("error", f"抓不到畫面：{e}")
+            return self._status("error", tr("抓不到畫面：{e}", e=e))
         self.last_image = img
 
         reading = self.rec.read(img)
@@ -327,21 +332,21 @@ class Engine:
             # 剛滑完的那一小段時間本來就讀不到完整盤面（水果正在飛），
             # 這時候跳「有 N 格沒見過」只會嚇到人，等動畫過了再判斷。
             if time.monotonic() - self._played_at < self.cfg.animation_grace:
-                return self._status("settling", "動畫播放中…", reading=reading)
+                return self._status("settling", tr("動畫播放中…"), reading=reading)
 
             if len(self.db) == 0:
-                return self._status("unknown", "樣板庫是空的。按「② 標記水果」教它每一格是幾號。",
+                return self._status("unknown", tr("樣板庫是空的。按「② 標記水果」教它每一格是幾號。"),
                                     reading=reading)
-            stopped = " 自動操控先停著，處理好會自己接回去。" if self.autoplay else ""
+            stopped = tr(" 自動操控先停著，處理好會自己接回去。") if self.autoplay else ""
             self.stop_autoplay(resumable=True)
             if reading.looks_misaligned:
                 return self._status("misaligned",
-                                    f"{len(reading.unknown_indices)} 格認不得 —— 多半是模擬器視窗移動過。"
-                                    f"按「重新吸附」試著自動修正。{stopped}",
+                                    tr("{n} 格認不得 —— 多半是模擬器視窗移動過。按「重新吸附」試著自動修正。",
+                                       n=len(reading.unknown_indices)) + stopped,
                                     cells=reading.board_cells, reading=reading)
             return self._status("unknown",
-                                f"有 {len(reading.unknown_indices)} 格沒見過（大概是升級出新水果了）。"
-                                f"按「② 標記水果」教它。{stopped}",
+                                tr("有 {n} 格沒見過（大概是升級出新水果了）。按「② 標記水果」教它。",
+                                   n=len(reading.unknown_indices)) + stopped,
                                 cells=reading.board_cells, reading=reading)
 
         cells = reading.board_cells
@@ -350,7 +355,7 @@ class Engine:
         # 這個條件比用像素差異設門檻可靠得多，也不怕遊戲背景一直有微動畫。
         if cells != self._confirming:
             self._confirming = cells
-            return self._status("settling", "畫面變動中…", cells=cells, reading=reading)
+            return self._status("settling", tr("畫面變動中…"), cells=cells, reading=reading)
 
         learned = self._learn_from_badges(reading)
 
@@ -361,7 +366,7 @@ class Engine:
 
         if self._result.best is None:
             self.stop_autoplay()
-            return self._status("nomove", "四個方向都動不了 —— 這局結束了。",
+            return self._status("nomove", tr("四個方向都動不了 —— 這局結束了。"),
                                 cells=cells, result=self._result, reading=reading)
 
         if self.autoplay:
@@ -389,8 +394,8 @@ class Engine:
         # 這裡不呼叫 rebuild()：db.add() 自己會把比對矩陣設成 None，而 rebuild()
         # 會順手把 _played_at 歸零 —— 那正好會在新水果冒出來的那一刻打亂自動
         # 操控的節奏（下一步立刻滑出去，不等 move_interval）。
-        names = "、".join(str(n) for n in sorted({int(l) for l in labels if l}))
-        return f"看格子上的數字認出 {names} 號水果，已經記起來了"
+        names = tr("、").join(str(n) for n in sorted({int(l) for l in labels if l}))
+        return tr("看格子上的數字認出 {names} 號水果，已經記起來了", names=names)
 
     def _play(self, board: int, move: int) -> Optional[Status]:
         """自動操控：真的把這一步滑出去。回傳非 None 代表出事了、要顯示給使用者。"""
@@ -408,8 +413,8 @@ class Engine:
                 self.stop_autoplay()
                 return self._status(
                     "stopped",
-                    f"連續滑了 {self.cfg.max_retries + 1} 次盤面都沒變化，已自動停止。"
-                    f"請確認模擬器視窗在最上層、而且沒有被這個輔助器的視窗蓋住。",
+                    tr("連續滑了 {n} 次盤面都沒變化，已自動停止。請確認模擬器視窗在最上層、而且沒有被這個輔助器的視窗蓋住。",
+                       n=self.cfg.max_retries + 1),
                 )
         else:
             self._retry = 0
@@ -421,7 +426,7 @@ class Engine:
             return self._status("error", str(e))
         except OSError as e:
             self.stop_autoplay()
-            return self._status("error", f"送出操作失敗：{e}")
+            return self._status("error", tr("送出操作失敗：{e}", e=e))
 
         self._played_board = board
         self._played_at = time.monotonic()
@@ -468,7 +473,7 @@ class Worker(threading.Thread):
                 try:
                     status = self.engine.step()
                 except Exception as e:  # 背景執行緒炸掉就整個沒反應，一律轉成畫面上的訊息
-                    status = Status("error", f"內部錯誤：{type(e).__name__}: {e}")
+                    status = Status("error", tr("內部錯誤：{e}", e=f"{type(e).__name__}: {e}"))
                 poll = self.engine.cfg.poll_ms
             self.out.put(status)
             # 盤面還在動（等「連續兩次讀到一樣」）時不用客氣：這段時間每多睡一拍，
@@ -489,7 +494,7 @@ class CalibrationOverlay(tk.Toplevel):
     互相校正還能吸收點歪的誤差（實測抖動 ±6px 仍能還原到 8px 內）。
     """
 
-    CORNER_NAMES = ("右上", "右下", "左下")
+    CORNER_NAMES = (tr("右上"), tr("右下"), tr("左下"))
     MIN_CELL = 12
 
     def __init__(self, master: tk.Misc, screen: V.Region, rows: int, cols: int, on_done) -> None:
@@ -548,21 +553,19 @@ class CalibrationOverlay(tk.Toplevel):
 
     def _refresh_text(self, error: str = "") -> None:
         if self.phase == 1:
-            self.canvas.itemconfig(self.title_id, text="第 1 步 / 共 2 步　框出「左上角那一格」")
+            self.canvas.itemconfig(self.title_id, text=tr("第 1 步 / 共 2 步　框出「左上角那一格」"))
             self.canvas.itemconfig(
                 self.hint_id,
-                text="沿著左上角那一顆水果的格子邊框拖曳。這一步是用來量出一格有多大。"
-                     "　　Esc 取消")
+                text=tr("沿著左上角那一顆水果的格子邊框拖曳。這一步是用來量出一格有多大。　　Esc 取消"))
         else:
             done = len(self.points)
             nxt = self.CORNER_NAMES[done] if done < len(self.CORNER_NAMES) else ""
             self.canvas.itemconfig(
                 self.title_id,
-                text=f"第 2 步 / 共 2 步　點選「{nxt}」那一格的中心（{done + 1}/3）")
+                text=tr("第 2 步 / 共 2 步　點選「{nxt}」那一格的中心（{i}/3）", nxt=nxt, i=done + 1))
             self.canvas.itemconfig(
                 self.hint_id,
-                text="跟著游標的白框就是一格的大小，對準格子中央再按。"
-                     "　　Backspace 退回上一步　　Esc 取消")
+                text=tr("跟著游標的白框就是一格的大小，對準格子中央再按。　　Backspace 退回上一步　　Esc 取消"))
         self.canvas.itemconfig(self.error_id, text=error)
 
     # -- 第 1 步：拖出一格 --
@@ -589,7 +592,7 @@ class CalibrationOverlay(tk.Toplevel):
         x0, y0 = self.drag_start
         w, h = abs(ev.x - x0), abs(ev.y - y0)
         if w < self.MIN_CELL or h < self.MIN_CELL:
-            self._refresh_text("框太小了，請沿著格子的邊框重新拖一次")
+            self._refresh_text(tr("框太小了，請沿著格子的邊框重新拖一次"))
             return
         left, top = self._to_screen(min(x0, ev.x), min(y0, ev.y))
         self.cell_box = V.Region(left, top, w, h)
@@ -598,7 +601,7 @@ class CalibrationOverlay(tk.Toplevel):
         # 標一下這是左上角，免得跟第 2 步點出來的綠框混在一起分不清
         self.tl_label_id = self.canvas.create_text(
             min(x0, ev.x) + w / 2, min(y0, ev.y) + h / 2,
-            text="左上", fill="#5ac36a", font=(UI_FONT, 13, "bold"))
+            text=tr("左上"), fill="#5ac36a", font=(UI_FONT, 13, "bold"))
         self._refresh_text()
 
     # -- 第 2 步：點三個角落 --
@@ -693,7 +696,7 @@ class AdbCalibrationDialog(tk.Toplevel):
     螢幕夠大就使不上力。
     """
 
-    CORNER_NAMES = ("右上", "右下", "左下")
+    CORNER_NAMES = (tr("右上"), tr("右下"), tr("左下"))
     SCREEN_MARGIN = (100, 220)   # 螢幕寬高各要扣掉多少給邊距跟上方文字
 
     def __init__(self, master: tk.Misc, image: np.ndarray, rows: int, cols: int, on_done,
@@ -721,7 +724,7 @@ class AdbCalibrationDialog(tk.Toplevel):
         self.mark_ids: List[int] = []
         self.ghost_ids: List[int] = []
 
-        self.title("校準盤面（手機截圖）")
+        self.title(tr("校準盤面（手機截圖）"))
         self.configure(bg="#000000")
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -774,14 +777,13 @@ class AdbCalibrationDialog(tk.Toplevel):
 
     def _refresh_text(self, error: str = "") -> None:
         if self.phase == 1:
-            self.title_var.set("第 1 步 / 共 2 步　框出「左上角那一格」")
-            self.hint_var.set("沿著左上角那一顆水果的格子邊框拖曳，量出一格有多大。")
+            self.title_var.set(tr("第 1 步 / 共 2 步　框出「左上角那一格」"))
+            self.hint_var.set(tr("沿著左上角那一顆水果的格子邊框拖曳，量出一格有多大。"))
         else:
             done = len(self.points)
             nxt = self.CORNER_NAMES[done] if done < len(self.CORNER_NAMES) else ""
-            self.title_var.set(f"第 2 步 / 共 2 步　點「{nxt}」那一格的中心（{done + 1}/3）")
-            self.hint_var.set("依序點「右上→右下→左下」三格的中心。"
-                              "Backspace 退回上一步　　Esc 取消")
+            self.title_var.set(tr("第 2 步 / 共 2 步　點「{nxt}」那一格的中心（{i}/3）", nxt=nxt, i=done + 1))
+            self.hint_var.set(tr("依序點「右上→右下→左下」三格的中心。Backspace 退回上一步　　Esc 取消"))
         self.error_var.set(error)
 
     def _press(self, ev) -> None:
@@ -809,7 +811,7 @@ class AdbCalibrationDialog(tk.Toplevel):
         w, h = right - left, bottom - top
         if w < 6 or h < 6:
             self.drag_start = None
-            self._refresh_text("框太小了，請沿著格子的邊框重新拖一次")
+            self._refresh_text(tr("框太小了，請沿著格子的邊框重新拖一次"))
             return
         self.cell_box = V.Region(left, top, w, h)
         self.phase = 2
@@ -904,15 +906,14 @@ class RegionTuner(tk.Toplevel):
         self._photo: Optional[ImageTk.PhotoImage] = None
         self._accepted = False
 
-        self.title("確認盤面範圍")
+        self.title(tr("確認盤面範圍"))
         self.configure(bg=BG)
         self.attributes("-topmost", True)
         self.resizable(False, False)
 
         tk.Label(
             self, bg=BG, fg=FG_DIM, font=(UI_FONT, 10), justify="left",
-            text="紫色框要剛好套住每一顆水果。不準的話：\n"
-                 "　方向鍵 = 平移 1px　　Shift+方向鍵 = 改變大小　　Ctrl+方向鍵 = 平移 10px",
+            text=tr("紫色框要剛好套住每一顆水果。不準的話：\n　方向鍵 = 平移 1px　　Shift+方向鍵 = 改變大小　　Ctrl+方向鍵 = 平移 10px"),
         ).pack(padx=12, pady=(12, 6), anchor="w")
 
         self.canvas = tk.Canvas(self, bg="#000000", highlightthickness=1,
@@ -924,9 +925,9 @@ class RegionTuner(tk.Toplevel):
 
         row = tk.Frame(self, bg=BG)
         row.pack(padx=12, pady=12)
-        tk.Button(row, text="重新自動吸附", command=self._refit, **btn_style()).pack(side="left", padx=4)
-        tk.Button(row, text="重新框選", command=self._reselect, **btn_style()).pack(side="left", padx=4)
-        tk.Button(row, text="確定", command=self._accept,
+        tk.Button(row, text=tr("重新自動吸附"), command=self._refit, **btn_style()).pack(side="left", padx=4)
+        tk.Button(row, text=tr("重新框選"), command=self._reselect, **btn_style()).pack(side="left", padx=4)
+        tk.Button(row, text=tr("確定"), command=self._accept,
                   **btn_style(bg=ACCENT, fg="#10240f")).pack(side="left", padx=4)
 
         for key, dx, dy in (("Left", -1, 0), ("Right", 1, 0), ("Up", 0, -1), ("Down", 0, 1)):
@@ -964,7 +965,7 @@ class RegionTuner(tk.Toplevel):
             screen=self.app.engine.grabber.virtual_screen(),
         )
         if fitted is None:
-            messagebox.showinfo("自動吸附", "這個範圍看不出格線，請手動微調或重新框選。", parent=self)
+            messagebox.showinfo(tr("自動吸附"), tr("這個範圍看不出格線，請手動微調或重新框選。"), parent=self)
             return
         self.region = fitted
         self._render()
@@ -990,7 +991,7 @@ class RegionTuner(tk.Toplevel):
         try:
             img = self.app.engine.grabber.grab(self.region)
         except (ValueError, OSError) as e:
-            self.info.config(text=f"抓不到畫面：{e}", fg=ERROR)
+            self.info.config(text=tr("抓不到畫面：{e}", e=e), fg=ERROR)
             return
 
         pil = Image.fromarray(img)
@@ -1010,9 +1011,9 @@ class RegionTuner(tk.Toplevel):
         self.info.config(
             text=f"left={self.region.left}  top={self.region.top}  "
                  f"{self.region.width}x{self.region.height}  "
-                 f"每格 {self.region.width / self.app.cfg.cols:.1f}x"
-                 f"{self.region.height / self.app.cfg.rows:.1f}"
-                 f"  內縮 {self.inset:.3f}",
+                 + tr("每格 {w:.1f}x{h:.1f}  內縮 {inset:.3f}",
+                      w=self.region.width / self.app.cfg.cols,
+                      h=self.region.height / self.app.cfg.rows, inset=self.inset),
             fg=FG_DIM,
         )
 
@@ -1031,19 +1032,18 @@ class LabelDialog(tk.Toplevel):
         self._photos: List[ImageTk.PhotoImage] = []
         self.entries: List[tk.Entry] = []
 
-        self.title("標記水果")
+        self.title(tr("標記水果"))
         self.configure(bg=BG)
         self.attributes("-topmost", True)
         self.resizable(False, False)
 
         tk.Label(
             self, bg=BG, fg=FG, font=(UI_FONT, 11, "bold"),
-            text="填入每一格水果上的號碼；空格請填 0",
+            text=tr("填入每一格水果上的號碼；空格請填 0"),
         ).pack(padx=14, pady=(14, 2), anchor="w")
         tk.Label(
             self, bg=BG, fg=FG_DIM, font=(UI_FONT, 9), justify="left",
-            text="黃框 = 程式認不得的格子，這幾格一定要填。其他格已經填好目前的判讀，\n"
-                 "如果判讀是對的就不用動；發現讀錯的話直接改掉，存檔後會一起學進去。",
+            text=tr("黃框 = 程式認不得的格子，這幾格一定要填。其他格已經填好目前的判讀，\n如果判讀是對的就不用動；發現讀錯的話直接改掉，存檔後會一起學進去。"),
         ).pack(padx=14, pady=(0, 10), anchor="w")
 
         grid_frame = tk.Frame(self, bg=BG)
@@ -1079,8 +1079,8 @@ class LabelDialog(tk.Toplevel):
 
         row = tk.Frame(self, bg=BG)
         row.pack(padx=14, pady=12)
-        tk.Button(row, text="取消", command=self.destroy, **btn_style()).pack(side="left", padx=4)
-        tk.Button(row, text="存檔並開始", command=self._save,
+        tk.Button(row, text=tr("取消"), command=self.destroy, **btn_style()).pack(side="left", padx=4)
+        tk.Button(row, text=tr("存檔並開始"), command=self._save,
                   **btn_style(bg=ACCENT, fg="#10240f")).pack(side="left", padx=4)
 
         self.bind("<Escape>", lambda _e: self.destroy())
@@ -1096,8 +1096,8 @@ class LabelDialog(tk.Toplevel):
             text = entry.get().strip()
             if not text:
                 if self.reading.cells[i] is None:
-                    self.hint.config(text=f"第 {i // self.app.cfg.cols + 1} 列第 "
-                                          f"{i % self.app.cfg.cols + 1} 格還沒填", fg=ERROR)
+                    self.hint.config(text=tr("第 {r} 列第 {c} 格還沒填", r=i // self.app.cfg.cols + 1,
+                                             c=i % self.app.cfg.cols + 1), fg=ERROR)
                     entry.focus_set()
                     return
                 labels.append(None)
@@ -1105,21 +1105,21 @@ class LabelDialog(tk.Toplevel):
             try:
                 value = int(text)
             except ValueError:
-                self.hint.config(text=f"「{text}」不是數字", fg=ERROR)
+                self.hint.config(text=tr("「{text}」不是數字", text=text), fg=ERROR)
                 entry.focus_set()
                 return
             if not 0 <= value <= S.MAX_RANK:
-                self.hint.config(text=f"號碼要在 0 到 {S.MAX_RANK} 之間", fg=ERROR)
+                self.hint.config(text=tr("號碼要在 0 到 {max} 之間", max=S.MAX_RANK), fg=ERROR)
                 entry.focus_set()
                 return
             labels.append(value)
 
         added = self.app.learn(self.reading.crops, labels)
         self.destroy()
-        learned = f"學到 {added} 張新樣板，樣板庫共 {len(self.app.engine.db)} 張"
+        learned = tr("學到 {added} 張新樣板，樣板庫共 {total} 張", added=added, total=len(self.app.engine.db))
         if self.app.resume_autoplay_if_interrupted():
-            self.app.flash(f"{learned}；自動操控接回去了 —— "
-                           f"按 {self.app.cfg.panic_key} 可隨時停止", 6)
+            self.app.flash(learned + tr("；自動操控接回去了 —— 按 {key} 可隨時停止",
+                                         key=self.app.cfg.panic_key), 6)
         else:
             self.app.flash(learned)
 
@@ -1127,13 +1127,13 @@ class LabelDialog(tk.Toplevel):
 # ---------------------------------------------------------------- 設定
 
 METHOD_LABELS = {
-    "swipe": "滑鼠滑動（推薦）",
-    "arrows": "鍵盤方向鍵",
-    "wasd": "鍵盤 W A S D",
+    "swipe": tr("滑鼠滑動（推薦）"),
+    "arrows": tr("鍵盤方向鍵"),
+    "wasd": tr("鍵盤 W A S D"),
 }
 CAPTURE_SOURCE_LABELS = {
-    "screen": "PC 模擬器（螢幕擷取）",
-    "adb": "手機（USB 接 adb）",
+    "screen": tr("PC 模擬器（螢幕擷取）"),
+    "adb": tr("手機（USB 接 adb）"),
 }
 
 # (欄位, 標題, 說明, 型別, 下限, 上限)
@@ -1141,24 +1141,31 @@ DETECT_FIELDS = [
     # 上限刻意壓在「還算合理」的範圍內：4x4 想超過 1 秒早就沒有增益，
     # 但少打一個小數點（0.5 打成 05）就會變成 5 秒，整個慢到像當機。
     # 寧可跳出「要在 0.05 到 1.5 之間」的紅字，也不要默默收下。
-    ("time_budget", "思考時間（秒）", "0.2～0.5 就很夠；記得打小數點", float, 0.05, 1.5),
-    ("poll_ms", "偵測間隔（毫秒）", "多久看一次畫面，全自動可壓到 50", int, 50, 5000),
-    ("tolerance", "辨識門檻", "越小越嚴格；認不得的格子變多就調大", float, 4.0, 40.0),
-    ("inset", "取樣內縮比例", "每格四邊往內縮多少，0.05～0.20", float, 0.01, 0.45),
-    ("opacity", "視窗透明度", "0.2～1.0", float, 0.2, 1.0),
+    ("time_budget", tr("思考時間（秒）"), tr("0.2～0.5 就很夠；記得打小數點"), float, 0.05, 1.5),
+    ("poll_ms", tr("偵測間隔（毫秒）"), tr("多久看一次畫面，全自動可壓到 50"), int, 50, 5000),
+    ("tolerance", tr("辨識門檻"), tr("越小越嚴格；認不得的格子變多就調大"), float, 4.0, 40.0),
+    ("inset", tr("取樣內縮比例"), tr("每格四邊往內縮多少，0.05～0.20"), float, 0.01, 0.45),
+    ("opacity", tr("視窗透明度"), tr("0.2～1.0"), float, 0.2, 1.0),
 ]
 AUTO_FIELDS = [
-    ("swipe_fraction", "滑動距離比例", "佔盤面短邊的比例，滑不動就調大", float, 0.1, 0.9),
-    ("swipe_ms", "滑動時間（毫秒）", "太快會被遊戲判成點擊", int, 30, 1000),
-    ("move_interval", "每步間隔（秒）", "兩步之間至少隔多久；記得打小數點", float, 0.1, 2.0),
+    ("swipe_fraction", tr("滑動距離比例"), tr("佔盤面短邊的比例，滑不動就調大"), float, 0.1, 0.9),
+    ("swipe_ms", tr("滑動時間（毫秒）"), tr("太快會被遊戲判成點擊"), int, 30, 1000),
+    ("move_interval", tr("每步間隔（秒）"), tr("兩步之間至少隔多久；記得打小數點"), float, 0.1, 2.0),
 ]
+
+
+# 英文字比中文長得多，照中文字數抓的欄寬會把英文標籤切掉
+_EN_UI = tr("設定") != "設定"
+LABEL_W = 22 if _EN_UI else 15
+MENU_W = 24 if _EN_UI else 14
+HINT_WRAP = 300
 
 
 class SettingsDialog(tk.Toplevel):
     def __init__(self, master: "AssistApp") -> None:
         super().__init__(master)
         self.app = master
-        self.title("設定")
+        self.title(tr("設定"))
         self.configure(bg=BG)
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -1169,39 +1176,39 @@ class SettingsDialog(tk.Toplevel):
         body = tk.Frame(self, bg=BG)
         body.pack(padx=16, pady=(16, 6))
 
-        left = self._section(body, "偵測與求解")
+        left = self._section(body, tr("偵測與求解"))
         left.grid(row=0, column=0, sticky="n")
         for spec in DETECT_FIELDS:
             self._number_row(left, cfg, spec)
 
-        right = self._section(body, "自動操控")
+        right = self._section(body, tr("自動操控"))
         right.grid(row=0, column=1, sticky="n", padx=(24, 0))
-        self._choice_row(right, "操控方式", "autoplay_method",
+        self._choice_row(right, tr("操控方式"), "autoplay_method",
                          METHOD_LABELS, cfg.autoplay_method,
-                         "模擬器有設按鍵對應才選鍵盤")
-        self._choice_row(right, "緊急停止鍵", "panic_key",
+                         tr("模擬器有設按鍵對應才選鍵盤"))
+        self._choice_row(right, tr("緊急停止鍵"), "panic_key",
                          {k: k for k in C.PANIC_KEYS}, cfg.panic_key,
-                         "按下去就立刻停手，不用切視窗")
+                         tr("按下去就立刻停手，不用切視窗"))
         for spec in AUTO_FIELDS:
             self._number_row(right, cfg, spec)
 
-        far = self._section(body, "畫面來源")
+        far = self._section(body, tr("畫面來源"))
         far.grid(row=0, column=2, sticky="n", padx=(24, 0))
-        self._choice_row(far, "來源", "capture_source",
+        self._choice_row(far, tr("來源"), "capture_source",
                          CAPTURE_SOURCE_LABELS, cfg.capture_source,
-                         "改這個之後要重新校準一次")
-        self._text_row(far, "手機序號", "adb_serial", cfg.adb_serial,
-                       "adb devices 看到的那串；留白就自動挑唯一一台")
+                         tr("改這個之後要重新校準一次"))
+        self._text_row(far, tr("手機序號"), "adb_serial", cfg.adb_serial,
+                       tr("adb devices 看到的那串；留白就自動挑唯一一台"))
 
         self.hint = tk.Label(self, bg=BG, fg=ERROR, font=(UI_FONT, 9), wraplength=460)
         self.hint.pack()
 
         row = tk.Frame(self, bg=BG)
         row.pack(pady=(4, 14))
-        tk.Button(row, text="清空樣板庫", command=self._clear_templates,
+        tk.Button(row, text=tr("清空樣板庫"), command=self._clear_templates,
                   **btn_style(fg=WARN)).pack(side="left", padx=4)
-        tk.Button(row, text="取消", command=self.destroy, **btn_style()).pack(side="left", padx=4)
-        tk.Button(row, text="套用", command=self._apply,
+        tk.Button(row, text=tr("取消"), command=self.destroy, **btn_style()).pack(side="left", padx=4)
+        tk.Button(row, text=tr("套用"), command=self._apply,
                   **btn_style(bg=ACCENT, fg="#10240f")).pack(side="left", padx=4)
         self.bind("<Escape>", lambda _e: self.destroy())
 
@@ -1219,7 +1226,7 @@ class SettingsDialog(tk.Toplevel):
         parent = section.inner  # type: ignore[attr-defined]
         line = tk.Frame(parent, bg=BG)
         line.pack(anchor="w", fill="x", pady=(6, 0))
-        tk.Label(line, text=label, bg=BG, fg=FG, font=(UI_FONT, 10), width=15,
+        tk.Label(line, text=label, bg=BG, fg=FG, font=(UI_FONT, 10), width=LABEL_W,
                  anchor="w").pack(side="left")
         var = tk.StringVar(value=str(getattr(cfg, key)))
         self.vars[key] = var
@@ -1228,25 +1235,25 @@ class SettingsDialog(tk.Toplevel):
                  highlightthickness=1, highlightbackground="#3a3f47",
                  highlightcolor=ACCENT).pack(side="left")
         tk.Label(parent, text=hint, bg=BG, fg=FG_DIM, font=(UI_FONT, 8),
-                 anchor="w").pack(anchor="w")
+                 anchor="w", justify="left", wraplength=HINT_WRAP).pack(anchor="w")
 
     def _choice_row(self, section: tk.Frame, label: str, key: str,
                     options: dict, current: str, hint: str) -> None:
         parent = section.inner  # type: ignore[attr-defined]
         line = tk.Frame(parent, bg=BG)
         line.pack(anchor="w", fill="x", pady=(6, 0))
-        tk.Label(line, text=label, bg=BG, fg=FG, font=(UI_FONT, 10), width=15,
+        tk.Label(line, text=label, bg=BG, fg=FG, font=(UI_FONT, 10), width=LABEL_W,
                  anchor="w").pack(side="left")
         var = tk.StringVar(value=options.get(current, next(iter(options.values()))))
         self.vars[key] = (var, {v: k for k, v in options.items()})
         menu = tk.OptionMenu(line, var, *options.values())
         menu.config(bg=BG_PANEL, fg=FG, font=(UI_FONT, 9), relief="flat", bd=0,
-                    highlightthickness=0, activebackground="#39404a", width=14,
+                    highlightthickness=0, activebackground="#39404a", width=MENU_W,
                     anchor="w")
         menu["menu"].config(bg=BG_PANEL, fg=FG, font=(UI_FONT, 9), bd=0)
         menu.pack(side="left")
         tk.Label(parent, text=hint, bg=BG, fg=FG_DIM, font=(UI_FONT, 8),
-                 anchor="w").pack(anchor="w")
+                 anchor="w", justify="left", wraplength=HINT_WRAP).pack(anchor="w")
 
     def _text_row(self, section: tk.Frame, label: str, key: str,
                  current: Optional[str], hint: str) -> None:
@@ -1254,7 +1261,7 @@ class SettingsDialog(tk.Toplevel):
         parent = section.inner  # type: ignore[attr-defined]
         line = tk.Frame(parent, bg=BG)
         line.pack(anchor="w", fill="x", pady=(6, 0))
-        tk.Label(line, text=label, bg=BG, fg=FG, font=(UI_FONT, 10), width=15,
+        tk.Label(line, text=label, bg=BG, fg=FG, font=(UI_FONT, 10), width=LABEL_W,
                  anchor="w").pack(side="left")
         var = tk.StringVar(value=current or "")
         self.vars[key] = var
@@ -1263,12 +1270,12 @@ class SettingsDialog(tk.Toplevel):
                  highlightthickness=1, highlightbackground="#3a3f47",
                  highlightcolor=ACCENT).pack(side="left")
         tk.Label(parent, text=hint, bg=BG, fg=FG_DIM, font=(UI_FONT, 8),
-                 anchor="w").pack(anchor="w")
+                 anchor="w", justify="left", wraplength=HINT_WRAP).pack(anchor="w")
 
     def _clear_templates(self) -> None:
         if not messagebox.askyesno(
-            "清空樣板庫",
-            "會忘掉所有學過的水果外觀，之後要重新標記一次。確定嗎？", parent=self
+            tr("清空樣板庫"),
+            tr("會忘掉所有學過的水果外觀，之後要重新標記一次。確定嗎？"), parent=self
         ):
             return
         self.app.clear_templates()
@@ -1281,10 +1288,11 @@ class SettingsDialog(tk.Toplevel):
             try:
                 value = kind(raw)
             except ValueError:
-                self.hint.config(text=f"「{label}」填的「{raw}」不是數字")
+                self.hint.config(text=tr("「{label}」填的「{raw}」不是數字", label=label, raw=raw))
                 return
             if not lo <= value <= hi:
-                self.hint.config(text=f"「{label}」要在 {lo} 到 {hi} 之間（填了 {value}）")
+                self.hint.config(text=tr("「{label}」要在 {lo} 到 {hi} 之間（填了 {value}）",
+                                        label=label, lo=lo, hi=hi, value=value))
                 return
             parsed[key] = value
 
@@ -1307,7 +1315,7 @@ class SettingsDialog(tk.Toplevel):
         if backend_changed:
             self.app.engine.refresh_capture_backend()
         if source_changed:
-            self.app.flash("畫面來源換了，請重新按「① 校準盤面」。", 10)
+            self.app.flash(tr("畫面來源換了，請重新按「① 校準盤面」。"), 10)
         self.destroy()
 
 
@@ -1330,7 +1338,7 @@ class AssistApp(tk.Tk):
         self.last_reading: Optional[V.Reading] = None
         self._flash_until = 0.0
 
-        self.title("水果 2048 輔助器")
+        self.title(tr("水果 2048 輔助器"))
         self.configure(bg=BG)
         self.attributes("-topmost", True)
         self.attributes("-alpha", self.cfg.opacity)
@@ -1372,7 +1380,7 @@ class AssistApp(tk.Tk):
 
         head_text = tk.Frame(head, bg=BG)
         head_text.pack(side="left", padx=(14, 0), anchor="center")
-        self.move_name = tk.Label(head_text, text="等待中", bg=BG, fg=FG_DIM,
+        self.move_name = tk.Label(head_text, text=tr("等待中"), bg=BG, fg=FG_DIM,
                                   font=(UI_FONT, 22, "bold"))
         self.move_name.pack(anchor="w")
         self.move_hint = tk.Label(head_text, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 10))
@@ -1393,7 +1401,7 @@ class AssistApp(tk.Tk):
 
         rank = tk.Frame(body, bg=BG)
         rank.pack(side="left", padx=(16, 0), anchor="n")
-        tk.Label(rank, text="四個方向評分", bg=BG, fg=FG_DIM, font=(UI_FONT, 9)).pack(anchor="w")
+        tk.Label(rank, text=tr("四個方向評分"), bg=BG, fg=FG_DIM, font=(UI_FONT, 9)).pack(anchor="w")
         self.rank_rows: List[tk.Label] = []
         for _ in range(4):
             lbl = tk.Label(rank, text="", bg=BG, fg=FG_DIM, font=("Consolas", 10), anchor="w")
@@ -1406,7 +1414,7 @@ class AssistApp(tk.Tk):
 
         auto = tk.Frame(self, bg=BG)
         auto.pack(fill="x", padx=16, pady=(12, 0))
-        self.auto_btn = tk.Button(auto, text="▶ 開始自動玩", command=self.toggle_autoplay,
+        self.auto_btn = tk.Button(auto, text=tr("▶ 開始自動玩"), command=self.toggle_autoplay,
                                   **btn_style(bg="#2f6b38", fg="#dff5e2"))
         self.auto_btn.pack(side="left")
         self.auto_note = tk.Label(auto, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 9))
@@ -1415,13 +1423,13 @@ class AssistApp(tk.Tk):
 
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=12, pady=12)
-        tk.Button(bar, text="① 校準盤面", command=self.start_calibration,
+        tk.Button(bar, text=tr("① 校準盤面"), command=self.start_calibration,
                   **btn_style()).pack(side="left", padx=2)
-        tk.Button(bar, text="② 標記水果", command=self.open_labeler,
+        tk.Button(bar, text=tr("② 標記水果"), command=self.open_labeler,
                   **btn_style()).pack(side="left", padx=2)
-        tk.Button(bar, text="重新吸附", command=self.refit,
+        tk.Button(bar, text=tr("重新吸附"), command=self.refit,
                   **btn_style()).pack(side="left", padx=2)
-        self.pause_btn = tk.Button(bar, text="暫停", command=self.toggle_pause, **btn_style())
+        self.pause_btn = tk.Button(bar, text=tr("暫停"), command=self.toggle_pause, **btn_style())
         self.pause_btn.pack(side="left", padx=2)
         tk.Button(bar, text="⚙", command=lambda: SettingsDialog(self),
                   **btn_style()).pack(side="right", padx=2)
@@ -1436,7 +1444,7 @@ class AssistApp(tk.Tk):
         if self.engine.autoplay and C.panic_pressed(self.cfg.panic_key):
             self.engine.stop_autoplay()
             self._sync_auto_note()
-            self.flash(f"已按下 {self.cfg.panic_key}，自動操控停止")
+            self.flash(tr("已按下 {key}，自動操控停止", key=self.cfg.panic_key))
 
         self._sync_pause_btn()
 
@@ -1457,25 +1465,25 @@ class AssistApp(tk.Tk):
         toggle_pause 裡改，走完那些流程就會對不上 —— 顯示「繼續」但其實在跑，
         使用者按下去反而把它停掉。每輪 _pump 同步一次最省事。
         """
-        want = "繼續" if self.worker.paused else "暫停"
+        want = tr("繼續") if self.worker.paused else tr("暫停")
         if self.pause_btn.cget("text") != want:
             self.pause_btn.config(text=want)
 
     def _sync_auto_note(self) -> None:
         on = self.engine.autoplay
         self.auto_btn.config(
-            text="■ 停止自動玩" if on else "▶ 開始自動玩",
+            text=tr("■ 停止自動玩") if on else tr("▶ 開始自動玩"),
             bg="#7a3030" if on else "#2f6b38",
             fg="#f7dede" if on else "#dff5e2",
         )
         played = self.engine.moves_played
         if on:
-            self.auto_note.config(text=f"執行中 · 已走 {played} 步 · 按 {self.cfg.panic_key} 隨時停止",
+            self.auto_note.config(text=tr("執行中 · 已走 {n} 步 · 按 {key} 隨時停止", n=played, key=self.cfg.panic_key),
                                   fg=ACCENT)
         else:
             self.auto_note.config(
-                text=f"開啟後程式會自己控制滑鼠（已走 {played} 步）" if played
-                     else "開啟後程式會自己控制滑鼠滑動盤面",
+                text=tr("開啟後程式會自己控制滑鼠（已走 {n} 步）", n=played) if played
+                     else tr("開啟後程式會自己控制滑鼠滑動盤面"),
                 fg=FG_DIM)
 
     def _render(self, st: Status) -> None:
@@ -1500,42 +1508,42 @@ class AssistApp(tk.Tk):
         if st.kind == "ok" and st.result is not None:
             best = st.result.best
             self.arrow.config(text=S.MOVE_ARROW[best], fg=ACCENT)
-            self.move_name.config(text=f"往 {S.MOVE_NAME[best]} 滑", fg=FG)
+            self.move_name.config(text=tr("往 {dir} 滑", dir=tr(S.MOVE_NAME[best])), fg=FG)
             self.move_hint.config(
-                text="自動執行中…" if st.autoplay else f"鍵盤 {S.MOVE_KEY[best]}",
+                text=tr("自動執行中…") if st.autoplay else tr("鍵盤 {key}", key=S.MOVE_KEY[best]),
                 fg=ACCENT if st.autoplay else FG_DIM)
             top = st.result.scores[0].score
             for row, ms in zip(self.rank_rows, st.result.scores):
                 if not ms.legal:
-                    row.config(text=f"{S.MOVE_ARROW[ms.move]} {S.MOVE_NAME[ms.move]}  不能動",
+                    row.config(text=f"{S.MOVE_ARROW[ms.move]} {tr(S.MOVE_NAME[ms.move])}  " + tr("不能動"),
                                fg="#5c626b")
                 else:
                     gap = ms.score - top
                     tag = "★" if ms.move == best else " "
                     row.config(
-                        text=f"{tag}{S.MOVE_ARROW[ms.move]} {S.MOVE_NAME[ms.move]}  "
-                             f"{'最佳' if gap == 0 else f'{gap:+,.0f}'}",
+                        text=f"{tag}{S.MOVE_ARROW[ms.move]} {tr(S.MOVE_NAME[ms.move])}  "
+                             + (tr("最佳") if gap == 0 else f"{gap:+,.0f}"),
                         fg=ACCENT if ms.move == best else FG_DIM,
                     )
-            self.footer.config(text=f"深度 {st.result.depth}　{st.result.nodes:,} nodes　"
-                                    f"{st.result.elapsed * 1000:.0f} ms　"
-                                    f"樣板 {len(self.engine.db)} 張　"
-                                    f"擷取 {self.engine.grabber.backend}")
+            self.footer.config(text=tr("深度 {depth}　{nodes:,} nodes　{ms:.0f} ms　樣板 {n} 張　擷取 {backend}",
+                                       depth=st.result.depth, nodes=st.result.nodes,
+                                       ms=st.result.elapsed * 1000, n=len(self.engine.db),
+                                       backend=self.engine.grabber.backend))
         elif st.kind == "nomove":
             self.arrow.config(text="✕", fg=ERROR)
-            self.move_name.config(text="遊戲結束", fg=ERROR)
+            self.move_name.config(text=tr("遊戲結束"), fg=ERROR)
             self.move_hint.config(text="")
         elif st.kind == "settling":
             # 盤面還在變，箭頭留著的是上一步的建議。整組調暗，讓人一眼看出
             # 「這是舊的、還沒跟上」，不會照著一個過期的方向滑。
             self.arrow.config(fg=FG_DIM)
             self.move_name.config(fg=FG_DIM)
-            self.move_hint.config(text="畫面變動中…", fg=FG_DIM)
+            self.move_hint.config(text=tr("畫面變動中…"), fg=FG_DIM)
         else:
             self.arrow.config(text="—", fg=FG_DIM)
-            self.move_name.config(text={"waiting": "尚未校準", "unknown": "需要標記",
-                                        "misaligned": "校準跑掉了", "stopped": "已停止",
-                                        "error": "出錯了"}.get(st.kind, "等待中"), fg=FG_DIM)
+            self.move_name.config(text={"waiting": tr("尚未校準"), "unknown": tr("需要標記"),
+                                        "misaligned": tr("校準跑掉了"), "stopped": tr("已停止"),
+                                        "error": tr("出錯了")}.get(st.kind, tr("等待中")), fg=FG_DIM)
             self.move_hint.config(text="")
             for row in self.rank_rows:
                 row.config(text="")
@@ -1567,14 +1575,14 @@ class AssistApp(tk.Tk):
             self.deiconify()
             if cal is None:
                 self.worker.resume()
-                self.flash("已取消校準")
+                self.flash(tr("已取消校準"))
                 return
             if cal.skew > max(4.0, 0.06 * max(cal.pitch_x, cal.pitch_y)):
                 messagebox.showwarning(
-                    "點的位置好像有點歪",
-                    f"從上下兩排量到的格距差了 {cal.skew:.0f} px，通常代表有一個角落點偏了。\n\n"
-                    f"還是會先幫你算出來，請在接下來的預覽視窗確認紫色框有沒有套準；"
-                    f"沒套準就按「重新框選」再來一次。",
+                    tr("點的位置好像有點歪"),
+                    tr("從上下兩排量到的格距差了 {skew:.0f} px，通常代表有一個角落點偏了。\n\n"
+                       "還是會先幫你算出來，請在接下來的預覽視窗確認紫色框有沒有套準；"
+                       "沒套準就按「重新框選」再來一次。", skew=cal.skew),
                     parent=self,
                 )
             # 使用者自己點出來的位置就是最可信的答案，這裡不再套自動吸附
@@ -1593,20 +1601,20 @@ class AssistApp(tk.Tk):
             img = self.engine.grabber.grab(full)
         except (ValueError, OSError) as e:
             self.worker.resume()
-            self.flash(f"抓不到手機畫面：{e}", 10)
+            self.flash(tr("抓不到手機畫面：{e}", e=e), 10)
             return
 
         def done(cal: Optional[V.Calibration]) -> None:
             if cal is None:
                 self.worker.resume()
-                self.flash("已取消校準")
+                self.flash(tr("已取消校準"))
                 return
             if cal.skew > max(4.0, 0.06 * max(cal.pitch_x, cal.pitch_y)):
                 messagebox.showwarning(
-                    "點的位置好像有點歪",
-                    f"從上下兩排量到的格距差了 {cal.skew:.0f} px，通常代表有一個角落點偏了。\n\n"
-                    f"還是會先幫你算出來，請在接下來的預覽視窗確認紫色框有沒有套準；"
-                    f"沒套準就按「重新框選」再來一次。",
+                    tr("點的位置好像有點歪"),
+                    tr("從上下兩排量到的格距差了 {skew:.0f} px，通常代表有一個角落點偏了。\n\n"
+                       "還是會先幫你算出來，請在接下來的預覽視窗確認紫色框有沒有套準；"
+                       "沒套準就按「重新框選」再來一次。", skew=cal.skew),
                     parent=self,
                 )
             RegionTuner(self, cal.region, cal.inset)
@@ -1651,33 +1659,33 @@ class AssistApp(tk.Tk):
                 reading = None
         self.worker.resume()
 
-        note = (f" 順便鎖定了視窗「{anchor['title']}」，之後搬動這個視窗不用重新校準。"
+        note = (tr(" 順便鎖定了視窗「{title}」，之後搬動這個視窗不用重新校準。", title=anchor["title"])
                 if anchor else "")
         if len(self.engine.db) == 0:
-            self.flash(f"範圍存好了。接著按「② 標記水果」教它每格是幾號。{note}", 10)
+            self.flash(tr("範圍存好了。接著按「② 標記水果」教它每格是幾號。") + note, 10)
         elif reading is not None and reading.ok:
-            self.flash(f"範圍存好了，而且馬上就讀得懂盤面 —— 可以開始用了。{note}", 8)
+            self.flash(tr("範圍存好了，而且馬上就讀得懂盤面 —— 可以開始用了。") + note, 8)
         else:
             unknown = len(reading.unknown_indices) if reading else self.cfg.rows * self.cfg.cols
-            self.flash(f"範圍存好了，但有 {unknown} 格對不上之前學過的樣板"
-                       f"（切格位置變了就會這樣）。請按「② 標記水果」重新教一次。{note}", 12)
+            self.flash(tr("範圍存好了，但有 {n} 格對不上之前學過的樣板（切格位置變了就會這樣）。請按「② 標記水果」重新教一次。",
+                          n=unknown) + note, 12)
 
     def refit(self) -> None:
         if self.engine.region is None:
-            self.flash("請先校準盤面")
+            self.flash(tr("請先校準盤面"))
             return
         self.worker.pause()
         with self.lock:
             ok = self.engine.refit_region()
         self.worker.resume()
         if ok and self.resume_autoplay_if_interrupted():
-            self.flash("已重新吸附格線，自動操控接回去了", 6)
+            self.flash(tr("已重新吸附格線，自動操控接回去了"), 6)
             return
-        self.flash("已重新吸附格線" if ok else "吸附失敗，請按「① 校準盤面」重框一次")
+        self.flash(tr("已重新吸附格線") if ok else tr("吸附失敗，請按「① 校準盤面」重框一次"))
 
     def open_labeler(self) -> None:
         if self.engine.region is None:
-            self.flash("請先校準盤面")
+            self.flash(tr("請先校準盤面"))
             return
         # 標記期間先停手（不能一邊教一邊滑），但記著「本來在自動玩」，存完檔會接回去
         self.engine.stop_autoplay(resumable=True)
@@ -1688,7 +1696,7 @@ class AssistApp(tk.Tk):
                 img = self.engine.snapshot()
             except (ValueError, OSError) as e:
                 img = None
-                self.flash(f"抓不到畫面：{e}")
+                self.flash(tr("抓不到畫面：{e}", e=e))
             reading = self.engine.rec.read(img) if img is not None else None
         if reading is None:
             self.worker.resume()
@@ -1708,14 +1716,14 @@ class AssistApp(tk.Tk):
             self.engine.db.clear()
             self.engine.db.save(TEMPLATES_PATH)
             self.engine.rebuild()
-        self.flash("樣板庫已清空，請重新標記一次")
+        self.flash(tr("樣板庫已清空，請重新標記一次"))
 
     def apply_config(self) -> None:
         with self.lock:
             self.cfg.save()
             self.engine.rebuild()
         self.attributes("-alpha", self.cfg.opacity)
-        self.flash("設定已套用")
+        self.flash(tr("設定已套用"))
 
     def _overlaps_board(self) -> bool:
         """輔助器視窗有沒有蓋在盤面上。
@@ -1738,46 +1746,41 @@ class AssistApp(tk.Tk):
         if self.engine.autoplay:
             self.engine.stop_autoplay()
             self._sync_auto_note()
-            self.flash("自動操控已停止")
+            self.flash(tr("自動操控已停止"))
             return
 
         if self.engine.region is None:
-            self.flash("請先按「① 校準盤面」")
+            self.flash(tr("請先按「① 校準盤面」"))
             return
         if len(self.engine.db) == 0:
-            self.flash("請先按「② 標記水果」，程式要看得懂盤面才能自己玩")
+            self.flash(tr("請先按「② 標記水果」，程式要看得懂盤面才能自己玩"))
             return
         if self.cfg.autoplay_method == "swipe" and self._overlaps_board():
             messagebox.showwarning(
-                "視窗擋住盤面了",
-                "這個輔助器的視窗正蓋在遊戲盤面上。\n\n"
-                "自動操控是用滑鼠在盤面上滑動的，視窗擋著的話會滑到自己身上、"
-                "遊戲完全不會有反應。\n\n"
-                "請先把輔助器視窗拖到旁邊，再按一次「開始自動玩」。",
+                tr("視窗擋住盤面了"),
+                tr("這個輔助器的視窗正蓋在遊戲盤面上。\n\n自動操控是用滑鼠在盤面上滑動的，視窗擋著的話會滑到自己身上、遊戲完全不會有反應。\n\n請先把輔助器視窗拖到旁邊，再按一次「開始自動玩」。"),
                 parent=self,
             )
             return
 
-        how = {"swipe": "在盤面中央用滑鼠滑動",
-               "arrows": "按方向鍵",
-               "wasd": "按 W / A / S / D"}[self.cfg.autoplay_method]
+        how = {"swipe": tr("在盤面中央用滑鼠滑動"),
+               "arrows": tr("按方向鍵"),
+               "wasd": tr("按 W / A / S / D")}[self.cfg.autoplay_method]
         if not messagebox.askyesno(
-            "開始自動操控",
-            f"接下來程式會自己{how}，一步一步幫你玩。\n\n"
-            f"隨時要停止：\n"
-            f"　• 按 {self.cfg.panic_key}（不用切回這個視窗也有效）\n"
-            f"　• 或再按一次「■ 停止自動玩」\n\n"
-            f"開始前請確認模擬器視窗在最上層、沒有被其他視窗擋住。\n\n"
-            f"要開始嗎？",
+            tr("開始自動操控"),
+            tr("接下來程式會自己{how}，一步一步幫你玩。\n\n隨時要停止：\n"
+               "　• 按 {key}（不用切回這個視窗也有效）\n　• 或再按一次「■ 停止自動玩」\n\n"
+               "開始前請確認模擬器視窗在最上層、沒有被其他視窗擋住。\n\n要開始嗎？",
+               how=how, key=self.cfg.panic_key),
             parent=self,
         ):
             return
 
         self.engine.start_autoplay()
         self.worker.resume()
-        self.pause_btn.config(text="暫停")
+        self.pause_btn.config(text=tr("暫停"))
         self._sync_auto_note()
-        self.flash(f"自動操控開始 —— 按 {self.cfg.panic_key} 可隨時停止", 6)
+        self.flash(tr("自動操控開始 —— 按 {key} 可隨時停止", key=self.cfg.panic_key), 6)
 
     def resume_autoplay_if_interrupted(self) -> bool:
         """把被辨識問題打斷的自動操控接回去。
@@ -1793,27 +1796,26 @@ class AssistApp(tk.Tk):
             return False
         if self.cfg.autoplay_method == "swipe" and self._overlaps_board():
             self.engine.autoplay_resumable = False
-            self.flash("輔助器視窗蓋在盤面上，沒有自動接回去。"
-                       "請把視窗挪開再按「▶ 開始自動玩」。", 10)
+            self.flash(tr("輔助器視窗蓋在盤面上，沒有自動接回去。請把視窗挪開再按「▶ 開始自動玩」。"), 10)
             return False
         self.engine.start_autoplay()
         self.worker.resume()
-        self.pause_btn.config(text="暫停")
+        self.pause_btn.config(text=tr("暫停"))
         self._sync_auto_note()
         return True
 
     def toggle_pause(self) -> None:
         if self.worker.paused:
             self.worker.resume()
-            self.pause_btn.config(text="暫停")
-            self.flash("繼續偵測")
+            self.pause_btn.config(text=tr("暫停"))
+            self.flash(tr("繼續偵測"))
         else:
             # 暫停時一併關掉自動操控，不然按「繼續」會冷不防又開始搶滑鼠
             self.engine.stop_autoplay()
             self._sync_auto_note()
             self.worker.pause()
-            self.pause_btn.config(text="繼續")
-            self.flash("已暫停（畫面不會再更新）", 999)
+            self.pause_btn.config(text=tr("繼續"))
+            self.flash(tr("已暫停（畫面不會再更新）"), 999)
 
     def _on_close(self) -> None:
         self.worker.stop()

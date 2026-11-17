@@ -3,3 +3,4 @@ _debug/
 config.json
 templates.json
 dist/
+_build_lang.py
