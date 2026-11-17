@@ -556,7 +556,7 @@ class Match(NamedTuple):
     distance: float        # 與最近樣板的平均通道差異
     margin: float          # 與「最接近的不同標籤」差多少，越大越有把握
     rejected: str = ""     # 認不得的原因："" / "distance" / "margin" / "empty"
-    source: str = "template"   # "template" = 樣板比對；"badge" = 讀格子上的號碼
+    source: str = "template"   # "template" = 樣板比對；"shift" = 挪幾 px 後比對成功；"badge" = 讀格子上的號碼
 
 
 class TemplateDB:
@@ -757,10 +757,46 @@ def misaligned_threshold(n_cells: int) -> int:
     return max(3, n_cells // 2)
 
 
+# 樣板比對認不得時，把切格位置上下左右挪幾 px 再比一次。
+#
+# 為什麼需要：格子寬度通常不是整數 px（例如 86.25），每一欄、每一列切下來的位置
+# 小數部分都不一樣，同一顆水果在不同格子裡會差 0~1 px。整格縮圖不在乎，但號碼徽章
+# 那一小塊縮圖對 1 px 很敏感 —— 實測右上角的西瓜跟左下角的西瓜肉眼一模一樣，
+# 徽章距離卻差到 18.8，整體超過門檻而「認不得」，使用者只好每換一個位置就標一次。
+# 挪 1 px 之後距離降到 4.0、把握度 19.5，跟正確答案一致。
+# 門檻（tolerance / min_margin）一點都沒放寬，只是多給幾個切法去對，所以不會更容易認錯。
+SHIFT_RADIUS = 2
+
+
 class Recognizer:
     def __init__(self, grid: Grid, db: TemplateDB) -> None:
         self.grid = grid
         self.db = db
+
+    def _shifted_match(self, img: np.ndarray, box: Tuple[int, int, int, int]) -> Optional[Match]:
+        """把這格的切框挪 ±SHIFT_RADIUS px 重比，回傳最接近的有效判讀（都不行就 None）。"""
+        x0, y0, x1, y1 = box
+        h, w = img.shape[:2]
+        offsets = sorted(
+            ((dx, dy) for dx in range(-SHIFT_RADIUS, SHIFT_RADIUS + 1)
+             for dy in range(-SHIFT_RADIUS, SHIFT_RADIUS + 1) if (dx, dy) != (0, 0)),
+            key=lambda p: (abs(p[0]) + abs(p[1]), p),
+        )
+        best: Optional[Match] = None
+        for dx, dy in offsets:
+            if x0 + dx < 0 or y0 + dy < 0 or x1 + dx > w or y1 + dy > h:
+                continue
+            m = self.db.match(raw_feature(img[y0 + dy:y1 + dy, x0 + dx:x1 + dx]))
+            if m.label is None:
+                continue
+            if best is None or m.distance < best.distance:
+                best = m
+            # 已經很有把握就不必把 24 種挪法全部試完（每次比對約 3ms）
+            if m.distance <= self.db.tolerance * 0.5 and m.margin >= self.db.min_margin * 2:
+                break
+        if best is None:
+            return None
+        return best._replace(source="shift")
 
     def read(self, img: np.ndarray, use_badge: bool = True) -> Reading:
         """讀一張盤面。
@@ -780,6 +816,13 @@ class Recognizer:
         # 樣板庫還是空的時候例外 —— 那是第一次使用，沒有「漂掉」可言，而且
         # 讀出來的號碼只是拿去預填標記視窗，使用者還會再確認一次。
         drifted = len(self.db) > 0 and len(unknown) >= misaligned_threshold(len(crops))
+        if unknown and not drifted:
+            boxes = self.grid.cell_boxes(img.shape[1], img.shape[0])
+            for i in unknown:
+                shifted = self._shifted_match(img, boxes[i])
+                if shifted is not None:
+                    matches[i] = shifted
+            unknown = [i for i, m in enumerate(matches) if m.label is None]
         if use_badge and not drifted:
             for i in unknown:
                 value, margin = read_badge_number(badge_of(crops[i]))
@@ -815,6 +858,6 @@ __all__ = [
     "autofit", "autofit_screen", "AUTOFIT_PAD",
     "Calibration", "calibration_from_corners",
     "badge_of", "badge_glyphs", "read_badge_number", "misaligned_threshold",
-    "THUMB", "RAW_LEN", "BADGE_BOX", "MAX_FRUIT",
+    "THUMB", "RAW_LEN", "BADGE_BOX", "MAX_FRUIT", "SHIFT_RADIUS",
     "DEFAULT_TOLERANCE", "DEFAULT_MIN_MARGIN", "STABLE_TOLERANCE",
 ]

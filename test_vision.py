@@ -251,6 +251,29 @@ def main():
     check("其他格不受影響", rec.read(region).cells == TRUE_BOARD)
     db.remove_label(NEW_FRUIT)
 
+    print("9b) 小視窗盤面：同一顆水果換個位置差不到 1px，挪一下再比，不用每個位置都標一次")
+    # testdata/board_small.png 是 2026-11-17 使用者在 BlueStacks 小視窗（盤面 345px、
+    # 格寬 86.25px）上的真實畫面。右上角（第 7 格）跟左下角（第 13 格）都是 4 號西瓜，
+    # 肉眼一模一樣，但因為格寬不是整數，切下來差了不到 1px，號碼徽章縮圖就對不上。
+    small = np.asarray(Image.open(os.path.join(os.path.dirname(DEFAULT_SHOT), "board_small.png")).convert("RGB"))
+    small_board = [1, 0, 0, 0, 0, 1, 2, 4, 1, 3, 3, 5, 2, 4, 6, 8]
+    sgrid = V.Grid(4, 4, 0.058074043546946896)
+    sdb = V.TemplateDB()
+    srec = V.Recognizer(sgrid, sdb)
+    scrops = sgrid.crops(small)
+    srec.learn([c for i, c in enumerate(scrops) if i != 7],
+               [v for i, v in enumerate(small_board) if i != 7])
+    saved, V.SHIFT_RADIUS = V.SHIFT_RADIUS, 0
+    plain = srec.read(small, use_badge=False)
+    V.SHIFT_RADIUS = saved
+    check("（重現問題）不挪的話右上角西瓜認不得", plain.cells[7] is None,
+          f"距離 {plain.matches[7].distance:.1f}")
+    r = srec.read(small, use_badge=False)
+    check("挪一下就認出是 4 號、整盤全對", r.cells == small_board, f"{r.cells}")
+    check("而且是靠挪位置認出來的", r.matches[7].source == "shift",
+          f"{r.matches[7].source} 距離 {r.matches[7].distance:.1f} 把握 {r.matches[7].margin:.1f}")
+    check("挪位置認出來的不算新樣板（不會被自動學進樣板庫）", 7 not in r.badge_indices)
+
     print("10) 讀格子上的號碼：新水果不必停下來問人")
     samples = [(TRUE_BOARD[i], V.badge_of(crops[i])) for i in fruit_at] + shop_badges()
     got = [V.read_badge_number(b)[0] for _, b in samples]
