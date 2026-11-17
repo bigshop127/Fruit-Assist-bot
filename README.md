@@ -1,8 +1,8 @@
 # 水果 2048 即時輔助器
 
-> **第一次用／朋友看這裡 👉 [使用說明（中文 / English）](GUIDE.md)**
+> **第一次用／朋友看這裡 👉 [使用說明（中文 / English）](../README.md)**
 > 必須在**電腦上用 Android 模擬器**玩，輔助器才看得到盤面。
-> You must play in an **Android emulator on your PC** — see the [User Guide](GUIDE.md).
+> You must play in an **Android emulator on your PC** — see the [User Guide](../README.md).
 >
 > 以下是開發用的完整技術說明。The rest of this page is the developer documentation (Chinese).
 
