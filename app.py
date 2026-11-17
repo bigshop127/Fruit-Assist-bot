@@ -25,7 +25,12 @@ from typing import List, Optional, Tuple
 import numpy as np
 from PIL import Image, ImageTk
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# 打包成單一 .exe（PyInstaller）時 __file__ 會指到每次啟動都重新解壓的暫存資料夾，
+# 設定跟樣板存在那裡關掉就沒了 —— 改存在 .exe 旁邊。
+if getattr(sys, "frozen", False):
+    APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 TEMPLATES_PATH = os.path.join(APP_DIR, "templates.json")
 

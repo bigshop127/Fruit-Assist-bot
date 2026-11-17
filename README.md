@@ -1,5 +1,11 @@
 # 水果 2048 即時輔助器
 
+> **第一次用／朋友看這裡 👉 [使用說明（中文 / English）](GUIDE.md)**
+> 必須在**電腦上用 Android 模擬器**玩，輔助器才看得到盤面。
+> You must play in an **Android emulator on your PC** — see the [User Guide](GUIDE.md).
+>
+> 以下是開發用的完整技術說明。The rest of this page is the developer documentation (Chinese).
+
 盯著 PC 模擬器畫面上的 4×4 盤面，自動辨識每一格是幾號水果，用 expectimax 算出最佳方向。
 可以只當提示（顯示大箭頭，你自己滑），也可以**讓它自己滑**。
 
