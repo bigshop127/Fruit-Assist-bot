@@ -4,7 +4,7 @@
 #
 # 不給 -Python 就在 %TEMP%\fruit2048-buildenv 建一個乾淨的 venv（只裝 numpy/pillow/mss/pyinstaller，
 # 打出來的 exe 比較小，也不會把你全域環境裡的雜套件包進去）。
-# 產出：fruit2048\dist\水果2048輔助器.exe（中文）、fruit2048\dist\Fruit2048Assistant.exe（English）
+# 產出：dist\水果2048輔助器.exe（中文）、dist\Fruit2048Assistant.exe（English）
 #
 # 語言是打包時寫進 exe 的預設值（暫時產生 _build_lang.py，打包完就刪掉）；
 # 使用者之後還是可以在 config.json 加 "language": "zh" / "en" 自己換。

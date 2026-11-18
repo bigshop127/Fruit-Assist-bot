@@ -1,614 +1,156 @@
-# 水果 2048 即時輔助器
+# 水果 2048 輔助器 · 使用說明 / Fruit 2048 Assistant · User Guide
 
-> **第一次用／朋友看這裡 👉 [使用說明（中文 / English）](../README.md)**
-> 必須在**電腦上用 Android 模擬器**玩，輔助器才看得到盤面。
-> You must play in an **Android emulator on your PC** — see the [User Guide](../README.md).
->
-> 以下是開發用的完整技術說明。The rest of this page is the developer documentation (Chinese).
+[中文](#中文) · [English](#english)
 
-盯著 PC 模擬器畫面上的 4×4 盤面，自動辨識每一格是幾號水果，用 expectimax 算出最佳方向。
-可以只當提示（顯示大箭頭，你自己滑），也可以**讓它自己滑**。
+### ⬇️ 下載 / Download
 
-遊戲規則假設：兩個 `n` 合成一個 `n+1`（蘋果 1 + 蘋果 1 = 橘子 2），移動後隨機空格長出一個 `1`。
+| 版本 / Version | 下載 / Download |
+|---|---|
+| 🇹🇼 中文版（介面全中文） | [**Fruit2048Assistant_Chinese.zip**](https://github.com/bigshop127/Fruit-Assist-bot/releases/latest/download/Fruit2048Assistant_Chinese.zip) |
+| 🇬🇧 English version (English interface) | [**Fruit2048Assistant_English.zip**](https://github.com/bigshop127/Fruit-Assist-bot/releases/latest/download/Fruit2048Assistant_English.zip) |
 
----
-
-## 安裝與啟動
-
-**雙擊桌面的「水果2048輔助器」捷徑**就好。需要 Python 3.9 以上，第一次執行會自動裝套件。
-
-其他啟動方式：雙擊資料夾裡的 `啟動輔助器.bat`，或
-
-```
-pip install -r requirements.txt
-python app.py
-```
+兩個版本功能完全一樣，只差介面語言。所有版本列表在 [Releases](https://github.com/bigshop127/Fruit-Assist-bot/releases)。<br>
+Both versions are identical apart from the interface language. All versions: [Releases](https://github.com/bigshop127/Fruit-Assist-bot/releases).
 
 ---
 
-## 第一次使用（只要做一次）
+## 中文
 
-### ① 校準盤面（兩步）
+### 這是什麼
+一個 Windows 小程式：盯著電腦螢幕上的水果 2048 盤面，自動認出每一格是幾號水果，
+算出最好的滑動方向。可以只顯示建議（大箭頭，你自己滑），也可以讓它**自己玩**。
 
-按「① 校準盤面」→ 整個桌面會變暗，接著分兩步：
+### ⚠️ 一定要在電腦上用模擬器玩
+輔助器是靠**截取電腦螢幕畫面**來認盤面的，所以遊戲必須開在**同一台電腦**的
+Android 模擬器裡（例如 BlueStacks、雷電模擬器 LDPlayer、MuMu 模擬器），
+模擬器視窗要**看得到、不能被擋住**。
 
-**第 1 步：框出「左上角那一格」**
-沿著左上角那顆水果的格子邊框拖一個框。這一步是在量「一格有多大」。
+**在手機上直接玩的話，輔助器看不到畫面，不會同步。**
 
-**第 2 步：依序點「右上 → 右下 → 左下」三格的中心**
-游標會帶著一個跟第 1 步同樣大小的白框，對準格子中央按一下就好。
-點錯可以按 **Backspace** 退回上一步。
+### 需要什麼
+- Windows 10 / 11 電腦
+- 一個 Android 模擬器，裡面裝好水果 2048 遊戲
+- 輔助器本身：
+  - **免安裝版（推薦）**：到上面的「下載」選 **中文版** 或 **English version**，不用另外裝任何東西
+  - 原始碼版：要先裝 [Python 3.9 以上](https://www.python.org/downloads/)
+    （安裝時勾選「Add Python to PATH」），再雙擊 `啟動輔助器.bat`（原始碼：本頁上方綠色「Code」→「Download ZIP」），第一次會自動裝套件
 
-> 為什麼不是「一次框住整個盤面」？因為盤面外緣是裝飾外框，邊界本來就模糊，框到哪裡算對全靠猜。
-> 每一格的中心點則是眼睛一看就知道，而且四個角落會互相校正 —— 實測就算每個點都歪 ±6px，
-> 算出來的盤面範圍仍在 8px 內。
+### 安裝
+1. 把下載的 zip **整個解壓縮**到一個資料夾（例如桌面或 `D:\水果2048`）。
+   不要直接在 zip 裡面點開，也不要放在 `C:\Program Files`（程式要在同一個資料夾存設定）。
+2. 雙擊 `水果2048輔助器.exe`。
+3. 如果跳出藍色的「Windows 已保護您的電腦」：按 **「其他資訊」→「仍要執行」**。
+   （這個程式沒有花錢買數位簽章，所以 Windows 不認識它；防毒軟體偶爾也會誤報。）
 
-點完會跳出確認視窗，上面用紫色框標出每一格的實際取樣範圍：
+`templates.json`（已經學好的水果外觀）要跟 exe 放在**同一個資料夾**。
 
-- 紫框剛好套住每顆水果 → 按「確定」
-- 有偏移 → **方向鍵**平移 1px、**Ctrl+方向鍵**平移 10px、**Shift+方向鍵**改變大小
-- 差太多 → 按「重新框選」重來兩步
+### 第一次使用（只要做一次）
+先開模擬器、進到遊戲盤面，再操作輔助器：
 
-按「確定」之後程式會**馬上試讀一次**並告訴你結果：讀得懂就可以直接開始用；
-如果顯示「有 N 格對不上之前學過的樣板」，那是因為切格位置變了，按「② 標記水果」重教一次即可。
+**① 校準盤面**
+1. 按「① 校準盤面」，整個畫面會變暗。
+2. 沿著**左上角那一格**的格子邊框拖一個框。
+3. 再依序點 **右上 → 右下 → 左下** 三格的**中心**。點錯按 `Backspace` 退一步。
+4. 確認視窗裡的紫框有套住每顆水果就按「確定」。
+   有點偏可以用方向鍵微調（`Ctrl`+方向鍵 一次 10px、`Shift`+方向鍵 改大小）。
 
-如果程式認得出你點的位置底下是哪個視窗（一般的模擬器視窗都認得出來），會順便鎖定它 ——
-之後把那個視窗搬到螢幕別的地方（例如挪到副螢幕、或跟其他工作視窗並排擺放），下次擷取前
-會自動找那個視窗現在的位置、把當初框的範圍跟著移過去，**不用重新校準**。閃出來的訊息會
-多一句「順便鎖定了視窗『XXX』」；沒有這句代表沒認到視窗（少數畫面來源不是一般 Win32 視窗
-時會這樣），退回原本的行為：視窗一動位置就要重新校準或按「重新吸附」。
-這招只跟著視窗**移動**，改變視窗**大小**還是得重新校準——變大變小之後格子位置的比例會跟著變，
-單純搬位移沒辦法處理。視窗被縮到最小、或被關掉時，程式會安靜地等待，不會噴錯誤訊息；
-還原視窗或重新打開之後，下一輪偵測就會自動接上，不用手動按任何按鈕。
-
-### ② 標記水果
-
-按「② 標記水果」→ 跳出 16 格的縮圖，每格下面填水果上的號碼，**空格填 0**。
-
-有水果的格子多半已經幫你填好了（號碼是直接從格子上讀來的），你要做的通常只有
-把**空格填 0** ——「空的」沒有號碼可讀，這件事只有你能告訴它。
-
-填完按「存檔並開始」。之後就永久記住了，換一局也不用再標。
-
-**只要標這一次。**玩下去合成出來的新水果，程式會自己看格子上印的號碼認出來，
-畫面上會閃一行「看格子上的數字認出 11 號水果，已經記起來了」，然後照常繼續 ——
-不會停下來等你標。只有它連號碼都讀不清楚時才會請你出手。
-
-號碼就是水果本身標的那個數字，這遊戲的水果只到 12：
+**② 標記水果**
+- 如果按完「確定」顯示「有 N 格對不上之前學過的樣板」（你的模擬器大小跟原本的不一樣），
+  就按「② 標記水果」：每一格下面填水果上的號碼，**空格填 0**，按「存檔並開始」。
+- 只要標一次，之後會記住。遊戲裡新合成出來的水果它通常會自己看號碼學起來。
+- 遊戲換了活動主題（背景、格子花紋變了）時，可能要再標一次。
 
 | 號碼 | 水果 | 號碼 | 水果 | 號碼 | 水果 |
 |---|---|---|---|---|---|
 | 1 | 蘋果 | 5 | 葡萄 | 9 | 鳳梨 |
 | 2 | 橘子 | 6 | 檸檬 | 10 | 藍莓 |
 | 3 | 香蕉 | 7 | 桃子 | 11 | 櫻桃 |
-| 4 | 西瓜 | 8 | 芒果 | 12 | 獼猴桃 |
+| 4 | 西瓜 | 8 | 芒果 | 12 | 奇異果 |
+
+### 平常怎麼玩
+- **只看提示**：開著就好，大箭頭就是建議的方向，你自己在模擬器裡滑。
+- **讓它自己玩**：按綠色「▶ 開始自動玩」，它會用滑鼠在模擬器上滑動。
+  - **要停：按 `F8`**（不用切回輔助器視窗），或按紅色「■ 停止自動玩」。
+  - 自動玩的時候會借用你的滑鼠，這段時間別同時用電腦做別的事。
+
+### 注意事項
+- 輔助器視窗**不要蓋在盤面上**，把它拖到模擬器旁邊。
+- 模擬器視窗**開大一點**比較好認（盤面太小時，水果上的號碼小到讀不出來，新水果就得手動標）。
+- 想換介面語言：在 exe 旁邊的 `config.json` 加一行 `"language": "en"`（或 `"zh"`），重開程式。
+- 模擬器視窗可以**移動**（會自動跟上），但**改變視窗大小**後要重新「① 校準盤面」。
+- 讀不到盤面時（例如被其他視窗擋住），按「重新吸附」或重新校準。
+- 每次打開程式，自動玩都是關著的，不會一開就搶滑鼠。
 
 ---
 
-## 平常怎麼用
+## English
 
-開著就好。畫面上會顯示：
+### What it is
+A small Windows app that watches the Fruit 2048 board on your screen, recognises which fruit is
+in each cell, and works out the best move. It can just show a hint (a big arrow — you swipe
+yourself) or **play by itself**.
 
-| 顯示 | 意思 |
-|---|---|
-| 大箭頭 + 「往下滑」 | 建議的方向 |
-| 4×4 小盤面 | 程式目前讀到的盤面（拿來確認它有沒有讀錯） |
-| 四個方向評分 | 各方向的期望分數，`最佳` 以外顯示與最佳的差距 |
-| 最底下一行 | 搜尋深度 / 節點數 / 耗時 / 樣板數 |
+### ⚠️ You must play on a PC, inside an Android emulator
+The assistant reads the board by **capturing your PC screen**, so the game has to run in an
+Android emulator **on the same computer** (e.g. BlueStacks, LDPlayer, MuMu Player), and the
+emulator window must be **visible and not covered**.
 
-每滑一步，程式會自動偵測畫面變化並算出下一步。**盤面要連續兩次讀到一樣才會採信**，
-所以合成動畫播完之前不會亂給建議。
+**If you play on your phone, the assistant cannot see the game and will not sync.**
 
----
+### Requirements
+- A Windows 10 / 11 PC
+- An Android emulator with the Fruit 2048 game installed
+- The assistant itself:
+  - **Portable version (recommended)**: pick **English version** (or 中文版) under "Download" above — nothing else to install
+  - Source version: install [Python 3.9+](https://www.python.org/downloads/) first (tick
+    "Add Python to PATH"), then double-click `啟動輔助器.bat` (source: green "Code" button → "Download ZIP" at the top of this page); packages install automatically on first run
 
-## 自動操控（讓它自己玩）
+### Install
+1. **Extract the whole downloaded zip** into a folder (e.g. Desktop or `D:\Fruit2048`).
+   Don't run it from inside the zip, and don't put it under `C:\Program Files` — the app saves
+   its settings in its own folder.
+2. Double-click `Fruit2048Assistant.exe` (Chinese version: `水果2048輔助器.exe`).
+3. If a blue "Windows protected your PC" box appears, click **"More info" → "Run anyway"**.
+   (The app isn't code-signed, so Windows doesn't recognise it; antivirus may occasionally flag it too.)
 
-按綠色的「**▶ 開始自動玩**」，程式就會自己在盤面上滑動、一步一步玩下去。
+Keep `templates.json` (the already-learned fruit images) **in the same folder** as the exe.
 
-### 停止的方法
+### First run (one time only)
+Open the emulator and get to the game board first, then:
 
-- **按 `F8`** —— 不用切回輔助器視窗也有效，隨時都能按。
-- 或按紅色的「■ 停止自動玩」。
-- 按「暫停」、「① 校準盤面」也都會一併停手。
+**① Calibrate the board**
+1. Click it — the screen dims.
+2. Drag a box around the **top-left cell** of the board.
+3. Then click the **centre** of the **top-right → bottom-right → bottom-left** cells, in that order.
+   `Backspace` undoes a click.
+4. If the purple boxes in the preview sit on each fruit, click OK. Nudge with the arrow
+   keys if needed (`Ctrl`+arrow = 10 px, `Shift`+arrow = resize).
 
-### 它會自己停下來的情況
+**② Label the fruits**
+- If after OK it says some cells don't match the learned templates (your emulator size differs),
+  click `② Label fruits`, type the number shown on each fruit under its thumbnail, **0 for empty cells**,
+  then click `Save & start`.
+- You only do this once. New fruits that appear later are usually learned automatically from the number printed on them.
+- When the game switches to a new event theme (different background / tile pattern) you may need to label once more.
 
-| 情況 | 為什麼 | 處理完會自己接回去嗎 |
-|---|---|---|
-| 出現沒見過的新水果 | 讀不懂盤面就不該亂滑 | **會** —— 標記完就繼續玩 |
-| 校準跑掉 | 同上 | **會** —— 重新吸附成功就繼續玩 |
-| 遊戲結束（四個方向都動不了） | 沒事可做了 | 不會 |
-| 連滑 3 次盤面都沒反應 | 多半是視窗被擋住，繼續空滑沒意義 | 不會 |
-| 抓不到畫面（模擬器關掉） | — | 不會 |
-| 你按了 `F8` / 暫停 / 停止自動玩 | 你要它停 | 不會 |
+Fruit numbers: 1 apple · 2 orange · 3 banana · 4 watermelon · 5 grape · 6 lemon ·
+7 peach · 8 mango · 9 pineapple · 10 blueberry · 11 cherry · 12 kiwi
 
-前兩種是「只是讀不懂畫面」，你按「② 標記水果」填完存檔、或按「重新吸附」修好之後，
-自動操控會**自己接回去繼續玩**，不用再按一次「開始自動玩」。其餘情況一律要人工再按一次
-—— 是你叫它停的、或是環境壞掉了，自己重開會很嚇人。
-（唯一的例外：接回去之前會再檢查一次輔助器視窗有沒有蓋住盤面，蓋住就不接，並在狀態列說明。）
+### Playing
+- **Hints only**: just leave it open — the big arrow is the suggested direction; swipe in the emulator yourself.
+- **Auto-play**: click the green `▶ Start auto-play` button and it will swipe in the emulator with your mouse.
+  - **To stop: press `F8`** (works without switching windows), or click the red `■ Stop auto-play`.
+  - Auto-play borrows your mouse — don't use the PC for anything else meanwhile.
 
-**每次啟動程式，自動操控一定是關閉的**，要人工按一次才會動 —— 不會一開就突然搶滑鼠。
-
-### 開始前要注意
-
-- **輔助器視窗不能蓋在盤面上。**滑動是真的用滑鼠在螢幕上滑，視窗擋著就會滑到自己身上。
-  程式會事先檢查並擋下來，但還是把視窗拖到旁邊比較省事。
-- 模擬器視窗要在最上層、不能被別的視窗蓋住。
-- 自動操控期間程式會借用你的滑鼠。每滑完一次會把游標移回原位，但你同時要用電腦做別的事
-  還是會互相干擾，建議讓它自己跑。
-
-### 三種操控方式（`⚙` 裡可以換）
-
-| 方式 | 說明 |
-|---|---|
-| **滑鼠滑動**（預設） | 在盤面中央按住拖曳，模擬觸控滑動。不用設定，最通用。 |
-| 鍵盤方向鍵 | 送出 ↑↓←→。要模擬器有設按鍵對應才有用。 |
-| 鍵盤 W A S D | 同上，換一組鍵。 |
-
----
-
-## 手機版（USB 接 adb）
-
-這遊戲也能直接在手機上玩，輔助器可以透過 USB 用 adb 遙控——不用模擬器，
-擷取畫面跟送滑動手勢都直接對著手機。跟 PC 模擬器那條路比，**反應明顯慢很多**
-（下面會解釋為什麼），先想清楚這個取捨再開始設定。
-
-### 設定步驟
-
-1. **手機開開發人員選項**：設定 → 關於手機 → 軟體資訊 → 連續點「軟體版本號碼」
-   （或「組建編號」）7 次。
-2. **開 USB 偵錯**：設定 → 開發人員選項 → 打開「USB 偵錯」。
-3. **裝 adb**：到 [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
-   下載 Windows 版，解壓縮後把資料夾加進系統 PATH。
-4. 接上 USB 線（要能傳資料，不是純充電線），手機會跳出「允許 USB 偵錯嗎？」，
-   勾選「一律允許使用這台電腦」→ 允許。
-5. `⚙` 裡「畫面來源」選「手機（USB 接 adb）」。如果 adb 同時看得到不只一台裝置
-   （例如手機＋PC 模擬器都開著），要在「手機序號」填清楚是哪一台——序號用
-   `adb devices` 查，只有一台的話留白就會自動挑。
-6. 換完來源舊的框選範圍會被清掉（螢幕座標跟手機像素是兩個不相干的座標系，
-   留著沒意義），按「① 校準盤面」重新框一次。
-
-### 手機版的校準長得不一樣
-
-PC 模擬器那條路是蓋一層半透明遮罩直接疊在桌面上讓你點；手機沒有「桌面」可以
-這樣疊，改成先抓一張手機截圖、縮小顯示在一個一般視窗裡，對著這張**靜態圖片**
-做一樣的兩步（框左上角一格、點右上/右下/左下三格中心）。操作邏輯完全一樣，
-差別只在於你是對著截圖點，不是對著即時畫面點。
-
-### 為什麼比較慢
-
-PC 模擬器那條路用 `mss` 截桌面，幾乎瞬間完成。手機這條路每次擷取都要透過 USB
-重新呼叫一次 `adb`（`adb exec-out screencap`），實測（Samsung 機型，USB 線）
-一輪 **400~460ms**，跟前面章節調校過的 ~50ms 偵測間隔比慢了一個數量級——這是
-「每一幀都重啟一次 adb 行程」這個機制本身的固有成本，`⚙` 裡的偵測間隔調再低
-也不會有感覺，因為真正花時間的是這一步，不是等待間隔。
-
-有更快的做法（在手機上常駐一個擷取服務、透過 socket 連續傳畫面，概念上跟
-scrcpy 那類工具一樣）——見下一節，這版已經做了。
+### Tips
+- **Don't let the assistant window cover the board** — put it beside the emulator.
+- You can **move** the emulator window (the app follows it), but after **resizing** it you must calibrate again.
+- If the board can't be read (e.g. something is covering it), click `Re-snap` or recalibrate.
+- A **bigger emulator window** reads better (on a tiny board the numbers on the fruits are too small to read, so new fruits must be labelled by hand).
+- To switch the interface language, add `"language": "zh"` (or `"en"`) to `config.json` next to the exe and restart.
+- Auto-play is always off when the app starts, so it never grabs your mouse unexpectedly.
 
 ---
 
-## 手機本地版（Termux + Shizuku，不用 PC 也能跑）
-
-上一節「USB 接 adb」是 PC 端遙控手機，每一幀都要跨 USB 呼叫一次 adb，延遲
-400~460ms。這個版本把整個「擷取→辨識→求解→滑動」搬進手機的 **Termux**
-裡直接跑 Python，screencap／滑動改叫 **Shizuku** 給的本機殼層（`rish`），
-不用再跨 USB，延遲降到本機等級。PC 版的 app.py 完全沒動、還是拿來做校準
-跟標記水果用；手機這邊只有一支不帶 UI 的 `mobile_main.py`，純文字輸出到
-終端機，Ctrl+C 停止。
-
-**不用 root**：Shizuku 是透過 Android 內建的「無線偵錯」或「USB 接電腦」
-兩種方式之一取得 adb 等級權限（不是完整 root），跟一般的 root 教學是兩回事，
-手機的保固、Samsung Pay 等功能不受影響。
-
-### 一次性環境設定（在手機的 Termux 裡）
-
-1. 裝 [Termux](https://github.com/termux/termux-app/releases)（GitHub 最新版，
-   Play 商店那個已經停更）跟 [Shizuku](https://github.com/RikkaApps/Shizuku/releases)。
-2. 啟動 Shizuku：手機連 Wi-Fi 的話，開發人員選項打開「無線偵錯」，照 Shizuku
-   App 裡的引導配對一次；**沒有 Wi-Fi 的話**改用「透過電腦（需要 adb）」那個
-   選項，接 USB 用 adb shell 跑 Shizuku 給的啟動指令即可，效果一樣。
-3. Termux 裡跑 `termux-setup-storage`，把 Shizuku「透過無線偵錯啟動」頁面
-   「Export files」匯出的 `rish`、`rish_shizuku.dex` 兩個檔搬進
-   `$PREFIX/bin/`，`chmod +x rish`。
-4. 建一個不受 `$0` 路徑影響的啟動腳本 `$PREFIX/bin/rish_auto`（內容見
-   `rish.py` 的模組說明或直接抄下面這段），`chmod +x`：
-   ```sh
-   #!/system/bin/sh
-   BASEDIR=$PREFIX/bin
-   DEX="$BASEDIR"/rish_shizuku.dex
-   if [ "$(getprop ro.build.version.sdk)" -ge 34 ] && [ -w "$DEX" ]; then
-     chmod 400 "$DEX"   # Android 14+ app_process 拒絕載入還能被寫入的 dex
-   fi
-   [ -z "$RISH_APPLICATION_ID" ] && export RISH_APPLICATION_ID="com.termux"
-   /system/bin/app_process -Djava.class.path="$DEX" /system/bin --nice-name=rish rikka.shizuku.shell.ShizukuShellLoader "$@"
-   ```
-5. `rish_auto -c id` 測試，第一次會跳出「Termux 要求使用 Shizuku」的權限
-   視窗，按允許。成功會印出 `uid=2000(shell)...`。
-6. `pkg install -y python python-numpy python-pillow git`。
-
-### 把程式跟資料搬過去
-
-```
-git clone --depth 1 --filter=blob:none --sparse https://github.com/bigshop127/Stock_recommendations.git
-cd Stock_recommendations && git sparse-checkout set fruit2048
-```
-
-`config.json`／`templates.json` 兩個檔案是 `.gitignore` 排除的，`git clone`
-不會帶過來，要另外用 `adb push` 從 PC 傳過去（放進手機的
-`~/storage/shared/`，再 `cp` 進 Termux clone 下來的 `fruit2048/` 資料夾）。
-**注意座標系統**：`config.json` 裡的校準範圍（`region`）是「手機螢幕像素」，
-不是「PC 螢幕像素」——一定要先在 PC 版 app.py 把〈畫面來源〉切成「手機
-（USB 接 adb）」、重新做過一次〈① 校準盤面〉跟〈② 標記水果〉，存出來的
-`config.json`／`templates.json` 才能直接搬去手機這邊用；PC 模擬器那份校準
-座標系完全不相干，直接拿去用只會抓錯位置。
-
-### 執行
-
-```
-python mobile_main.py
-```
-
-沒有視窗，狀態直接印在終端機（`第 N 步：往 X 滑`、`結束了`、認不得的提示…）。
-Ctrl+C 隨時停止。
-
-### 已知落差
-
-* **沒有「讀格子上號碼」自動認新水果的能力。** 那個機制是拿 Windows 內建
-  字型現場畫數字樣板比對（見〈辨識調校紀錄〉），Termux 找不到那些字型，
-  這一層會安靜地什麼都認不出來——退回「認不得就等你標記」的行為，不會
-  誤判也不會崩潰，只是新水果冒出來時手機端不會自己學，要回 PC 版標記一次
-  再把 `templates.json` 複製過來。
-* **Shizuku 用「電腦啟動」的話，拔 USB 線或手機重開機會讓伺服器停掉**
-  （用「無線偵錯」啟動的比較持久）。重新接上 USB、在 PC 這邊重跑一次
-  Shizuku 的啟動指令即可，Termux 這邊完全不用重設。
-
----
-
-## 遇到問題
-
-### 「有 N 格沒見過」
-
-升級出新水果，而且**連格子上的號碼都讀不清楚**（正常情況它會自己讀出來，見
-〈② 標記水果〉）。按「② 標記水果」，把黃框那幾格填一下就好 —— 黃框以外的格子
-都已經填好目前的判讀，不用動。
-如果剛才正在自動玩，存檔之後會自己接回去繼續玩，不用再按一次「開始自動玩」。
-
-### 「N 格認不得 —— 多半是模擬器視窗移動過」
-
-模擬器視窗被移動或改變大小了。如果校準時有鎖定到視窗（見〈① 校準盤面〉），單純搬動位置
-應該會自動跟上、不會跳這個訊息 —— 會看到這個多半是**改了視窗大小**，或者當初沒鎖定成功。
-先按「**重新吸附**」讓程式自己修；修不好就按「① 校準盤面」重框。
-吸附成功時同樣會把中斷的自動操控接回去。
-
-辨識刻意設計成「對不準時大聲說認不得」而不是硬猜 —— 讀錯盤面給出的建議比不給建議更糟。
-
-### 建議看起來很笨 / 想讓它想更久
-
-按 `⚙` 把「思考時間」調大（0.2 → 0.6 秒）。搜尋深度會跟著變深。
-
-### 認不得的格子一直冒出來
-
-按 `⚙` 把「辨識門檻」調大（12 → 16）。門檻越大越寬鬆，但太寬鬆會開始讀錯。
-
-### 輔助器的畫面比遊戲慢半拍
-
-一步的延遲大約是「**兩輪**偵測間隔 ＋ 思考時間」。之所以是兩輪，是因為盤面要
-連續兩次讀到一樣才採信 —— 合成動畫播到一半時每一幀都不同，只讀一次會對著
-飛到半空的水果算方向。
-
-`⚙` 裡這兩個值直接決定延遲：
-
-| 設定 | 建議值 | 說明 |
-|---|---|---|
-| 偵測間隔（毫秒） | `50` | 下限就是 UI 驗證擋住的那個數字，全自動場景可以直接壓到底 |
-| 思考時間（秒） | `0.3` | 延遲裡最大的一塊。4x4 盤面 0.3 秒的棋力跟 1 秒幾乎沒差 |
-
-盤面還在變的那一兩輪，箭頭會**變暗**，代表「這是上一步的建議、還沒跟上」——這是給人看的提示，
-全自動操控時沒人在盯著畫面，這段變暗完全不影響出手時機。
-
-8/15 把偵測間隔的預設值再砍半（100→50）、每步間隔也跟著收緊（0.35→0.2 秒）。這兩個號稱
-「安全邊界」的數字，實際上留的是給**人**看得舒服的餘裕，不是遊戲動畫本身需要的時間——盤面
-穩不穩是靠「連續兩次讀到一樣」這個機制判斷的，跟偵測間隔設多快無關；每步間隔也只是在盤面
-已經穩定確認之後，額外插進去的一段乾等。全自動、沒人在旁邊看的情況下，這兩個可以放心往下壓。
-真正動不得的是「滑動時間」（140ms）跟「滑動距離比例」——那是模擬器判斷「這是滑動、不是點擊」
-的門檻，跟有沒有人在看無關，調太快反而會讓輸入直接失效。
-
-⚠️ 這兩欄記得打小數點：`0.5` 少打一個點變成 `05`，`float()` 會讀成 **5 秒**，
-每走一步先想五秒，整個像當機。上限特地壓在 1.5 / 2.0 秒，就是要讓這種手滑
-跳紅字，而不是默默收下。
-
-延遲不影響自動操控的正確性 —— 它在確認到穩定盤面之前不會出手，慢半拍只是你看到的畫面慢。
-
-### 自動操控滑了但遊戲沒反應
-
-依序檢查：
-
-1. **輔助器視窗有沒有蓋在盤面上？** 拖到旁邊再試。
-2. **模擬器視窗在最上層嗎？** 被別的視窗蓋住就滑不到。
-3. **模擬器是不是用「以系統管理員身分執行」開的？** 是的話這個輔助器也要用系統管理員身分開，
-   否則 Windows 不准低權限程式送輸入給高權限視窗（程式會直接跳這個訊息）。
-4. 還是不行的話，`⚙` 裡把「**滑動時間**」調長（140 → 300 毫秒）、
-   「**滑動距離比例**」調大（0.35 → 0.5）。有些模擬器對太快的手勢會判成點擊。
-
-### 自動操控走太快 / 想看清楚
-
-`⚙` 裡把「每步間隔」調大（0.2 → 1.5 秒）。
-
-### 校準怎麼調都不對
-
-用除錯工具看實際切在哪：
-
-```
-python debug_grid.py 你的截圖.png            # 自動吸附整張圖
-python debug_grid.py 你的截圖.png 56 56 450 452   # 指定範圍
-```
-
-會在 `_debug/` 產生 `overlay.png`（原圖畫上格線）和 `cells.png`（16 格切出來的樣子）。
-
----
-
-## 檔案
-
-| 檔案 | 用途 |
-|---|---|
-| `app.py` | 主程式：視窗、校準、標記、背景偵測、自動操控的判斷 |
-| `solver.py` | 求解引擎：bitboard + expectimax |
-| `vision.py` | 螢幕擷取、格線自動吸附、樣板比對辨識、讀格子上的號碼 |
-| `control.py` | 輸入模擬：SendInput 滑動 / 按鍵、緊急停止鍵偵測、視窗追蹤用的 win32 helper |
-| `adb.py` | 手機版（PC 遙控）擷取／操控：透過 `adb` 截圖、送滑動手勢 |
-| `rish.py` | 手機本地版擷取／操控：透過 Shizuku 的 `rish` 本機殼層執行 screencap／滑動，只給跑在 Termux 上的 Python 用 |
-| `mobile_main.py` | 手機本地版主迴圈：沒有 UI，純文字輸出，`python mobile_main.py` 直接在 Termux 裡執行 |
-| `i18n.py` | 介面語言：`tr("中文原文")`＋英文對照表 `EN`；語言＝環境變數 `FRUIT2048_LANG` → config.json `language` → 打包預設 → 中文 |
-| `debug_grid.py` | 切格對位除錯工具 |
-| `tools/launch.ps1` | 桌面捷徑指向這支 |
-| `tools/build_exe.ps1` | 打包免安裝 exe：中文版 `水果2048輔助器.exe`＋英文版 `Fruit2048Assistant.exe`（`-Lang zh/en/all`） |
-| `config.json` | 你的設定（校準範圍等），自動產生 |
-| `templates.json` | 學過的水果外觀，自動產生 |
-| `test_*.py` | 驗證用，`python test_solver.py` 等八支（`test_i18n.py` 檢查每句介面文字都有英文、佔位變數對得上） |
-| `testdata/board.png` | 測試用的真實盤面截圖，多支測試都吃這張 |
-| `testdata/board_small.png` | 小視窗（盤面 345px）真實截圖，測「同一顆水果換位置差 1px」 |
-| `testdata/shop_*.png` | 商店介面的水果圖，8～12 號長什麼樣、兩位數徽章長什麼樣 |
-
-### 重建桌面捷徑
-
-不小心刪掉的話，在 PowerShell 跑：
-
-```powershell
-$s = (New-Object -ComObject WScript.Shell).CreateShortcut(
-    (Join-Path ([Environment]::GetFolderPath('Desktop')) '水果2048輔助器.lnk'))
-$s.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$s.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\CC AI Agent\fruit2048\tools\launch.ps1"'
-$s.WorkingDirectory = 'C:\CC AI Agent\fruit2048'
-$s.IconLocation = 'C:\CC AI Agent\fruit2048\icon.ico,0'
-$s.WindowStyle = 7
-$s.Save()
-```
-
----
-
-## 運作原理
-
-### 求解：expectimax + bitboard
-
-盤面壓成一個 64-bit 整數（16 個 nibble，每格存指數）。單列的移動結果與評估分數
-都預先算好 65536 筆查表，所以整盤評估只要 8 次查表。
-
-評估函式用 2048 社群公認最強的 nneonneo 權重組合：單調性、可合併數、空格數、總和懲罰。
-
-搜尋是疊代加深的 expectimax（玩家節點取最大、系統長水果的節點取期望值），
-加上轉置表與機率剪枝，並且**每一輪都必須整輪跑完才採用** —— 只算完兩個方向就超時的
-半套結果會誤導，因為沒算到的方向分數是缺的。
-
-實測（自我對局，只長 1、每步只給 0.03 秒）：1500 步後仍未結束，最大合成到 **11 號**。
-
-### 辨識：兩層，樣板比對為主、讀號碼為輔
-
-**第一層：自學式樣板比對。**模擬器每次把同一顆水果畫出來的像素幾乎完全一樣，
-所以「縮圖比最近鄰」比 OCR 準也快得多。第一次人工標一輪，之後永久沿用。
-
-**第一層半：挪幾 px 再比。**（2026-11-18 加）格寬通常不是整數（小視窗 86.25px），
-每一欄、每一列切下來差 0~1px，號碼徽章縮圖對 1px 很敏感：右上角跟左下角的同一顆西瓜
-距離差到 26 而認不得，使用者只好每個位置都標一次。認不得的格子會把切框挪 ±2px
-（24 種）重比，門檻一點都不放寬；挪出來的結果不寫進樣板庫。測資 `testdata/board_small.png`。
-
-**第二層：讀格子上印的號碼。**第一層認不得的格子，才去讀徽章上的數字。
-讀得出來就當場採用並收進樣板庫 —— 所以合成出新水果時不會停下來等人標。
-兩層都不確定才說「認不得」。
-
-沒有外部 OCR 相依：數字樣板是用 14 種 Windows 內建粗體字型當場畫出來的，
-比對方式跟第一層一樣是縮圖最近鄰。要裝的東西還是只有 numpy 跟 Pillow。
-
-### 辨識調校紀錄
-
-以下每個決定都是拿真實遊戲截圖實測出來的，不是憑感覺選的：
-
-**特徵 = 整格縮圖 + 號碼徽章縮圖。**
-只看整格的話，蘋果(1) 跟橘子(2) 都是圓形紅橘色水果，區隔度只有 9.9；
-把徽章那一小塊也放進特徵，區隔度拉到 15.8。
-
-**每塊各自減掉自己的色版平均值。**
-不做這件事的話，畫面亮度 +30 就會讓 16 格錯 5 格；做了之後同樣條件下距離只有 5.6、零誤判。
-（也試過只減亮度均值以保留色相，但對亮度 −30 的耐受性明顯較差：10.03 vs 3.31，所以採用色版各自去均值。）
-
-**門檻設 12、區隔度下限設 2.5。**
-穩態（含 ±12 雜訊、±30 亮度、gamma 0.85~1.2、±4% 縮放）最差距離是 3.7；
-校準偏 2px 時距離跳到 16.5、偏 5px 以上區隔度會崩到 1 以下並開始誤判。
-12 這個門檻正好把兩邊分開 —— **對不準時寧可說認不得，也不要默默讀出錯的盤面**。
-
-**讀號碼：只留「最底下那一排」字符。**
-徽章貼在格子底邊，水果的圖一定在它上面。原本靠「高比寬 ≥ 1.05」把果肉的亮部濾掉，
-但畫面調亮之後桃子的亮部會長成 16×18（比值 1.12）直接鑽過去。改用底部位置分群就穩了：
-那塊亮部的底在 52%，數字的底在 85%，位置永遠分得開 —— 這比繼續把形狀門檻調緊可靠，
-因為形狀門檻再緊也總有反例。
-
-**白字門檻從徽章自己的亮度範圍推（`lo + 0.62 × (hi − lo)`），不是固定值。**
-固定門檻一遇到整體調亮就整片變白、調暗就整片變黑。
-
-**字高不到 10px 直接棄權。**
-實測縮到 40% 時 `2` 會被讀成 `1`，而且信心差距還有 0.067（比正常值還漂亮）——
-筆畫糊在一起之後它是「很有把握地錯」，光靠信心門檻擋不住，只能用尺寸擋。
-
-**讀出來不在 1~12 就不採用。**遊戲的水果只到 12，超出範圍代表讀錯了。
-
-**格線漂掉時不啟用讀號碼。**
-格線偏掉的時候徽章框也跟著偏。這時候要是讓讀號碼去救場，未知格數會掉下來，
-該重新吸附的畫面看起來就像沒事，還會把切歪的樣板學進樣板庫 ——
-**一個修不掉的錯誤來源**。所以「認不得的格子過半」時直接跳過第二層。
-
-實測（盤面截圖 10 個徽章 + 商店截圖的 8~12，含兩位數）：原尺寸 15/15 全對；
-縮放 30%~150%、亮度 ±70、雜訊 ±35 交叉測試下**零讀錯**，讀不準的一律變成棄權，
-空格在任何情況下都沒有生出過數字。
-
-**格線自動吸附：週期用邊緣能量，相位用亮度。**
-這兩件事必須用不同訊號。週期用邊緣能量的自相關最穩（吃進整條曲線的週期性）；
-但相位絕對不能用邊緣能量 —— 每條縫在邊緣能量上是「一對」高峰（縫的左緣與右緣各一個
-格子邊框），梳齒會被吸到其中一緣去，實測固定偏掉約 12px。改用亮度就準了：
-縫是暗的、格子中心是亮的。實測 10 組隨便框的範圍，誤差 0~1px。
-
-**吸附前要先把範圍外擴一圈。**
-框得比盤面還緊的話正解根本不在搜尋空間裡（實測誤差 67px）。外擴 15% 之後誤差 0px。
-
-### 校準為什麼改成兩步
-
-自動吸附在開發用的截圖上誤差 0~1px，但那是**單一一台機器、單一解析度**的結果。
-實際使用時盤面外緣的裝飾外框長什麼樣、四周留白多少都會變，一旦吸附吸歪，
-使用者只能靠方向鍵一格一格試，很難知道到底哪裡不對。
-
-改成「左上一格的框 + 其餘三角落的中心」之後，位置完全由使用者指定，不依賴任何影像啟發式：
-
-* **格距**取上下兩排（和左右兩排）各量一次再平均，四個角落互相校正。
-* **原點**的 x 取左上、左下平均，y 取左上、右上平均，吸收單點的誤差。
-* **inset** 直接從第 1 步框出來的格子大小反推：`(1 − 格子寬 / 格距) / 2`，
-  所以取樣框會自動貼齊實際的水果範圍，不用再猜。
-* 兩側量到的格距差多少（`skew`）會回報出來，差太多就跳警告，代表有一角點偏了。
-
-自動吸附沒有拿掉，改成確認視窗裡的「重新自動吸附」按鈕 —— 需要時才用，不再自動介入。
-
-### 自動操控的設計
-
-**判斷「上一步有沒有生效」靠盤面本身，不靠時間。**
-記住動手時的盤面，下次讀到不一樣才算成功。一樣的話等 `retry_after` 再補一次，
-連續 `max_retries` 次都沒反應就停手 —— 對著沒反應的視窗一直空滑只會愈錯愈遠。
-
-**剛滑完的一段時間內讀不到盤面不算錯誤。**
-水果正在飛的時候本來就讀不到完整盤面，這時跳「有 N 格沒見過」只會嚇到人。
-`animation_grace`（預設 1.2 秒）內一律當成動畫，過了才升級成錯誤並停手。
-
-**緊急停止在兩個地方都檢查。**
-背景執行緒每輪檢查一次，UI 執行緒每 60ms 再檢查一次 —— 背景正在滑動的那 140ms
-（`swipe_ms`）是不會回頭看的，只靠背景檢查按 F8 的反應會慢半拍。
-
-**「停手」分成兩種：可接回去的、不能接回去的。**
-`Engine.stop_autoplay(resumable=True)` 只用在「讀不懂畫面」（新水果／格線跑掉），
-它會留下 `autoplay_resumable` 記號；使用者標記完存檔、或重新吸附成功之後，
-`AssistApp.resume_autoplay_if_interrupted()` 就把自動操控接回去，不用再按一次開始
-（原本每教一顆新水果就要重按一次＋再確認一次，玩到後期水果一直升級，非常煩）。
-其他所有停手（F8、暫停、停止按鈕、送不出操作、遊戲結束、抓不到畫面）都是不可接回去的，
-而且會**清掉**那個記號 —— 分界線是「你叫它停的」與「環境壞了」不能自己重開。
-記號只在「真的從開著變關掉」的那一次寫入，因為認不得的期間 `step()` 每輪都會再叫一次，
-每次都寫的話會被後面幾輪洗掉。
-
-**「暫停／繼續」的字樣每輪從背景執行緒的真實狀態同步。**
-校準、標記、重新吸附都會自己 `worker.pause()` 再 `resume()`，字樣如果只在 `toggle_pause`
-裡改，走完那些流程就會顯示「繼續」但其實在跑，使用者按下去反而把它停掉。
-
-### 維護筆記（改到這幾個檔案時會踩到的坑）
-
-**`tools/launch.ps1` 必須存成 UTF-8 with BOM。**
-桌面捷徑跑的是 Windows PowerShell 5.1，它會把沒有 BOM 的 UTF-8 當成 Big5 讀，
-中文註解變亂碼之後會把引號吃掉，整支腳本語法錯誤。（`.bat` 相反，加 BOM 會出問題，
-所以 `啟動輔助器.bat` 維持無 BOM。）
-
-**啟動 pythonw 時 `-WindowStyle` 一定要明確寫 `Normal`。**
-省略不寫的話，子行程會從 STARTUPINFO「繼承」啟動鏈的顯示狀態，而桌面捷徑本身是
-`WindowStyle=7`（最小化，用來壓掉 PowerShell 黑視窗），結果輔助器一開就縮在工作列；
-寫成 `Hidden` 更慘，程式在跑但完全看不到視窗。
-
-**測資圖不要放在 repo 外面。**
-四支測試共用一張真實遊戲截圖，路徑本來指向 Claude 的暫存圖片快取
-（`.claude/image-cache/<session>/1.png`）。那個檔名是「這場對話的第幾張圖」，
-使用者一傳新圖就覆蓋掉，2026-08-15 果然被蓋掉，`test_app` 與 `test_vision`
-一次紅了 14 項，而且失敗長得像辨識退化，很容易誤判成程式壞了。
-現在測資是 `testdata/board.png`，跟程式一起進版控。
-
-**測資裡的座標都要從 `TRUE_REGION` 推出來，不要寫死。**
-換測資圖時盤面大小會變。autofit 那十個「使用者隨手框」的範圍、兩段式校準的
-點擊座標，本來都是配合舊圖（450px 盤面）寫死的絕對座標，換成新圖（746px）
-之後整片紅，看起來像 autofit 壞了，其實是測試自己的輸入過期。
-
-**盤面範圍的真值不能拿 autofit 的輸出來填。**
-那樣「測 autofit 準不準」就變成自己考自己。`TRUE_REGION` 是獨立量的：沿著中央
-帶做亮度曲線，再用細格搜尋找「五條格線最暗、四個格心最亮」的相位與格距，
-量到 x 起點 41.0 格距 186.60、y 起點 35.0 格距 187.60，跟 autofit 差 1px。
-
-**測試裡搬動視窗之後要 `update()`，不能只 `update_idletasks()`。**
-`geometry()` 只是跟視窗管理員要一個位置，`winfo_rootx()` 要等 ConfigureNotify
-這個真事件進來才會更新，而 idletasks 不處理事件。`_overlaps_board` 的那幾項
-只等 idletasks 的話會看心情通過。
-
-**測試檔開頭要把 stdout 轉成 UTF-8。**
-中文版 Windows 的主控台預設是 cp950，能印中文但印不出結尾那個 ✅／❌，
-`UnicodeEncodeError` 會在**所有測試都跑完之後**才炸，看起來像測試失敗，
-其實是報喜的那一行掛掉。四支測試都在 import 後面加了 `sys.stdout.reconfigure`。
-
-**加新的辨識能力時，順手確認它不會把「校準漂掉」蓋過去。**
-讀號碼這層剛接上去的時候，漂掉的畫面因為被它救回幾格，`looks_misaligned` 就翻成
-False，「該重新吸附」的提示整個消失 —— 而且是測試先抓到的，不是使用者。
-任何「認不得時的備援手段」都要先問一句：它會不會讓真正的故障看起來像沒事？
-
-**視窗追蹤只做「跟著搬」，刻意不做「隔窗擷取」。**
-`control.py` 的 `window_at`／`find_window`／`window_rect` 只是把 `Engine.region`
-重新對齊視窗現在的位置，擷取本身還是 `mss` 截整個螢幕畫面 —— 如果拿別的視窗蓋住
-模擬器，截到的還是蓋在上面那個東西，不是模擬器內容。真的要做到「隔窗也看得穿」
-得換成 `PrintWindow`/`BitBlt` 針對視窗內容擷取，但多數 PC 模擬器是 GPU 畫面，
-這招常常直接回傳一片黑，沒有把握每款都能用，所以先不做。
-
-**`WindowFromPoint` 用點位置找視窗，跟 DPI 縮放一樣敏感。**
-測試（`test_control.py` 第 8 節）一開頭跟 `app.py` 開頭做一樣的
-`SetProcessDpiAwareness` 宣告，不然非 100% 縮放或多螢幕時，Python 行程收到的
-座標跟 `tkinter` 自己回報的位置會對不起來，點下去找到完全無關的視窗。
-另外 `WindowFromPoint` 常常抓到子控制項，要用 `GetAncestor(GA_ROOT)`
-往上走到最上層視窗，標題跟位置才穩定。
-
-**測試裡呼叫 `Engine.refit_region()` 要小心它會 `cfg.save()`。**
-拿 `build_auto()`（`move_interval`／`retry_after`／`animation_grace` 全部故意設成
-`0.0` 方便測節奏）建出來的 Engine 去呼叫 `refit_region()`，那些超出設定視窗合法
-範圍的值會被存進沙盒設定檔 `config.json`；後面的小節如果重新 `Config.load()`
-（例如建一個新的 `AssistApp`），會讀到 `move_interval=0.0`，UI 驗證擋在
-`(0.1, 2.0)` 之外，之後任何一次「套用設定」都會靜靜地失敗，連跟這個欄位完全
-無關的其他設定也套用不進去。2026-08-15 加視窗追蹤測試時踩到，解法是
-（1）不需要 `build_auto` 特殊欄位的測試改用 `A.Engine(A.Config.load())`，
-（2）真的要呼叫會 `cfg.save()` 的方法時，測試前後備份/還原整個設定檔。
-
-**`Engine.grabber` 不能放進 `rebuild()` 裡無條件重建。**
-加手機支援時原本把 `self.grabber = ...`（跟著 `capture_source` 決定要用哪個）
-一起塞進 `rebuild()`，邏輯上乾淨，但 `rebuild()` 被呼叫的次數遠比想像中多——
-標記水果（`AssistApp.learn()`）、重新吸附、套用設定都會觸發，測試裡蓋掉的
-`FakeGrabber` 因此會在某次不相干的操作之後被無聲換回真的 `V.ScreenGrabber()`，
-背景執行緒接著拿它去截真正的螢幕，讀出來的內容跟測試預期的完全對不上，而且
-只有測試序列剛好在那個時間點跑到某個檢查才會炸開，看起來跟改動的地方毫不相干。
-`self.controller` 本來就每次 `rebuild()` 都重建，之所以沒出過事只是因為剛好
-沒有測試在覆蓋它之後又觸發 `rebuild()`——不是這個模式本身安全。修法是把
-grabber 建構抽成 `Engine._build_grabber()`，只在 `__init__` 跟明確呼叫
-`refresh_capture_backend()`（畫面來源真的換了才用得到）時執行，`rebuild()`
-本身完全不碰 `self.grabber`。
-
-**測試裡的 `AdbCalibrationDialog`／`RegionTuner` 用完記得清掉 `PhotoImage`。**
-這兩個對話框會留一張 `ImageTk.PhotoImage` 當畫布背景，物件活到整支測試函式
-結束才被回收的話，`ui.destroy()` 可能已經把 Tcl 直譯器收掉了，`__del__` 會在
-殼子沒了之後才跑，跳出一堆「main thread is not in main loop」——是 Python
-直譯器關閉時的既有 GC 順序問題，不影響測試結果（`_failures` 不會被算進去），
-但看起來很像測試爆炸，不要被嚇到去查一個沒有壞的地方。
-
-### 中英雙語與發佈（2026-11-18）
-
-- 介面文字一律寫成 `tr("中文原文")`（`vision.py`／`adb.py` 裡是 `_t`，因為 `tr` 在那邊是「右上角」的變數名）。
-  有變數用具名佔位 `tr("已走 {n} 步", n=played)`，**不要再用 f-string 寫中文**，不然英文版翻不到。
-- 新增或改一句中文，就要在 `i18n.py` 的 `EN` 補英文；`python test_i18n.py` 會抓漏翻、佔位不一致、殘留中文。
-  `python test_i18n.py --dump` 列出還沒翻的句子。
-- 其他測試會比對中文字樣，開頭固定 `FRUIT2048_LANG=zh`。
-- 發佈：`toolsuild_exe.ps1` 打兩支 exe → 各自跟 `templates.json`＋說明 txt 包成
-  `Fruit2048Assistant_Chinese.zip`／`Fruit2048Assistant_English.zip` → 上傳 GitHub Release
-  （tag `fruit2048-vX.Y.Z`）。首頁 README 的下載連結是 `releases/latest/download/<檔名>`，檔名別改。
-  Release 檔名用英文：GitHub 會把非 ASCII 的附件檔名改掉。
+<sub>開發用技術文件見 [`DEVELOPMENT.md`](DEVELOPMENT.md)。<br>
+Developer docs (Chinese): [`DEVELOPMENT.md`](DEVELOPMENT.md).</sub>
