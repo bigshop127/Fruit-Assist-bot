@@ -88,6 +88,13 @@ EN: Dict[str, str] = {
     "  {name}：要 {need:,} 魚符 ✓": "  {name}: needs {need:,} tokens ✓",
     "理論值：假設每顆都完美合進去，實際會低一點": "Theoretical: assumes every fruit merges perfectly",
     "隱藏視窗鍵": "Hide-window key",
+    "畫面恢復正常，自動玩自己接回去了": "The board is readable again — auto-play resumed by itself",
+    "畫面恢復正常，自己接回去": "board readable again, resumed",
+    "短時間內自己接回去太多次，不再自動接，請檢查遊戲畫面": "resumed too often in a short time; not resuming again — check the game screen",
+    "（會自己接回去）": " (will resume by itself)",
+    "停止": "stopped",
+    "暫停中，畫面恢復會自己接回去": "paused; resumes once the board is readable",
+    "{t} 停止：{why}": "stopped at {t}: {why}",
     "背景滑動（模擬器 adb，不搶滑鼠）": "Background swipe (emulator adb, mouse stays free)",
     "滑鼠滑動": "Mouse swipe",
     "背景滑動要先在模擬器設定開 ADB；鍵盤要模擬器有設按鍵對應":

@@ -33,6 +33,8 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 TEMPLATES_PATH = os.path.join(APP_DIR, "templates.json")
+# 自動玩每次停下／自己接回去都記一行，事後才查得到「剛剛為什麼停」
+AUTOPLAY_LOG_PATH = os.path.join(APP_DIR, "autoplay_log.txt")
 
 
 def enable_dpi_awareness() -> None:
@@ -188,6 +190,12 @@ class Engine:
         # 使用者把問題處理掉之後就自己接回去，不用再按一次開始（見 stop_autoplay）。
         self.autoplay_resumable = False
         self.moves_played = 0
+        # 自己接回去用：停下的時間、當時盤面、是否要等盤面變了才接（滑了沒反應那種）
+        self._stopped_at = 0.0
+        self._stopped_board: Optional[int] = None
+        self._resume_needs_change = False
+        self._auto_resumes: List[float] = []
+        self.last_stop: Optional[Tuple[float, str]] = None   # (時間, 原因)，給 UI 顯示
         self.rebuild()
 
     def _build_grabber(self):
@@ -249,10 +257,12 @@ class Engine:
     def start_autoplay(self) -> None:
         self.autoplay = True
         self.autoplay_resumable = False
+        self.last_stop = None
         self._played_board = None
         self._retry = 0
 
-    def stop_autoplay(self, resumable: bool = False) -> None:
+    def stop_autoplay(self, resumable: bool = False, board: Optional[int] = None,
+                      needs_change: bool = False) -> None:
         """停下自動操控。
 
         `resumable=True` 代表「只是被辨識問題擋下來」——使用者標記完新水果、
@@ -266,6 +276,9 @@ class Engine:
             # 認不得的那幾秒 step() 每一輪都會叫一次，只在真的從「開著」變「關掉」
             # 的那一次記錄下來，後面幾輪不要把記號洗掉。
             self.autoplay_resumable = True
+            self._stopped_at = time.monotonic()
+            self._stopped_board = board
+            self._resume_needs_change = needs_change
         self.autoplay = False
         self._played_board = None
         self._retry = 0
@@ -320,7 +333,50 @@ class Engine:
         left, top, _, _ = rect
         return V.Region(left + anchor["dx"], top + anchor["dy"], base.width, base.height), None
 
+    # 停下之後在這段時間內畫面恢復正常就自己接回去；超過就當成你不在了，不接
+    RESUME_WINDOW = 600.0
+    # 短時間內自己接回去太多次代表有東西一直卡著，不要無止盡地停停走走
+    RESUME_LIMIT = (5, 300.0)
+
     def step(self) -> Status:
+        was = self.autoplay
+        st = self._step()
+        if was and not self.autoplay:
+            reason = st.message or st.kind
+            self.last_stop = (time.time(), reason)
+            self._log(tr("停止") + f" [{st.kind}] " + reason
+                      + (tr("（會自己接回去）") if self.autoplay_resumable else ""))
+        return st
+
+    def _log(self, text: str) -> None:
+        try:
+            with open(AUTOPLAY_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + f"(第 {self.moves_played} 步) {text}\n")
+        except OSError:
+            pass
+
+    def _maybe_resume(self, board: int) -> str:
+        """被暫時的狀況（遊戲彈窗、動畫太久、adb 一時沒回應）打斷的自動玩，
+        畫面恢復正常、讀得懂盤面之後自己接回去。回傳要顯示的訊息（沒接就空字串）。"""
+        if self.autoplay or not self.autoplay_resumable:
+            return ""
+        now = time.monotonic()
+        if now - self._stopped_at > self.RESUME_WINDOW:
+            return ""
+        if self._resume_needs_change and board == self._stopped_board:
+            return ""   # 滑了沒反應那種：要等盤面自己變了（例如彈窗被關掉）才接
+        limit, window = self.RESUME_LIMIT
+        self._auto_resumes = [t for t in self._auto_resumes if now - t < window]
+        if len(self._auto_resumes) >= limit:
+            self.autoplay_resumable = False
+            self._log(tr("短時間內自己接回去太多次，不再自動接，請檢查遊戲畫面"))
+            return ""
+        self._auto_resumes.append(now)
+        self.start_autoplay()
+        self._log(tr("畫面恢復正常，自己接回去"))
+        return tr("畫面恢復正常，自動玩自己接回去了")
+
+    def _step(self) -> Status:
         if self.autoplay and C.panic_pressed(self.cfg.panic_key):
             self.stop_autoplay()
             return self._status("stopped", tr("偵測到 {key}，自動操控已停止。", key=self.cfg.panic_key))
@@ -336,7 +392,8 @@ class Engine:
         try:
             img = self.grabber.grab(self.region)
         except (ValueError, OSError) as e:
-            self.stop_autoplay()
+            # adb 偶爾會一時沒回應；畫面抓得回來就自己接回去
+            self.stop_autoplay(resumable=True)
             return self._status("error", tr("抓不到畫面：{e}", e=e))
         self.last_image = img
 
@@ -384,12 +441,13 @@ class Engine:
             return self._status("nomove", tr("四個方向都動不了 —— 這局結束了。"),
                                 cells=cells, result=self._result, reading=reading)
 
+        resumed = self._maybe_resume(board)
         if self.autoplay:
             failure = self._play(board, self._result.best)
             if failure is not None:
                 return failure
 
-        return self._status("ok", learned, cells=cells, result=self._result, reading=reading)
+        return self._status("ok", resumed or learned, cells=cells, result=self._result, reading=reading)
 
     def _learn_from_badges(self, reading: V.Reading) -> str:
         """把「靠格子上的號碼認出來」的新水果收進樣板庫，回傳要顯示的訊息。
@@ -428,7 +486,8 @@ class Engine:
             if forget is not None:
                 forget()   # 背景滑動：可能是盤面在模擬器裡的位置變了，下一次重新找
             if self._retry > self.cfg.max_retries:
-                self.stop_autoplay()
+                # 多半是遊戲跳了彈窗擋住輸入；盤面之後自己變了（彈窗關掉）就接回去
+                self.stop_autoplay(resumable=True, board=board, needs_change=True)
                 return self._status(
                     "stopped",
                     tr("連續滑了 {n} 次盤面都沒變化，已自動停止。請確認模擬器視窗在最上層、而且沒有被這個輔助器的視窗蓋住。",
@@ -440,10 +499,10 @@ class Engine:
         try:
             self.controller.play(self.region, move)
         except C.InputError as e:
-            self.stop_autoplay()
+            self.stop_autoplay(resumable=True)
             return self._status("error", str(e))
         except OSError as e:
-            self.stop_autoplay()
+            self.stop_autoplay(resumable=True)
             return self._status("error", tr("送出操作失敗：{e}", e=e))
 
         self._played_board = board
@@ -1366,7 +1425,6 @@ class AssistApp(tk.Tk):
         self.last_reading: Optional[V.Reading] = None
         self.last_cells: Optional[List[int]] = None
         self._hidden = False
-        self._hidden_autoplay = False
         self._hide_key_down = False
         # 還沒校準／還沒標記的人要用到「詳細」裡的工具按鈕，精簡模式先不要藏起來
         if self.cfg.region is None or len(self.engine.db) == 0:
@@ -1588,11 +1646,11 @@ class AssistApp(tk.Tk):
     def hide_window(self) -> None:
         """整個視窗藏起來（工作列也看不到），按隱藏鍵叫回來。
 
-        藏起來時背景偵測照跑、自動玩照玩；自動玩如果自己停了（遊戲結束、
-        認不得、出錯、按了緊急停止）會自動跳回來，免得不知道它早就不動了。
+        藏起來時背景偵測照跑、自動玩照玩。自動玩停下時**不會**自己跳出來——
+        跳出來會搶走前景（例如正在打的英雄聯盟）的焦點。暫時性的停下會自己接回去，
+        停下的原因記在 autoplay_log.txt 和視窗上「上次停止」那一行。
         """
         self._hidden = True
-        self._hidden_autoplay = self.engine.autoplay
         self.withdraw()
 
     def show_window(self) -> None:
@@ -1609,11 +1667,6 @@ class AssistApp(tk.Tk):
             else:
                 self.hide_window()
         self._hide_key_down = down
-        if self._hidden:
-            if self.engine.autoplay:
-                self._hidden_autoplay = True
-            elif self._hidden_autoplay:
-                self.show_window()
 
     # -- 事件 --
     def _pump(self) -> None:
@@ -1660,6 +1713,15 @@ class AssistApp(tk.Tk):
             self.auto_note.config(text=tr("已走 {n} 步 · {key} 停止 · {hide} 隱藏／叫回",
                                           n=played, key=self.cfg.panic_key, hide=self.cfg.hide_key),
                                   fg=ACCENT)
+        elif self.engine.last_stop is not None:
+            when, why = self.engine.last_stop
+            waiting = self.engine.autoplay_resumable
+            self.auto_note.config(
+                text=tr("已走 {n} 步", n=played) + " · "
+                     + (tr("暫停中，畫面恢復會自己接回去") if waiting
+                        else tr("{t} 停止：{why}", t=time.strftime("%H:%M", time.localtime(when)),
+                                why=why[:40])),
+                fg=WARN)
         else:
             self.auto_note.config(
                 text=(tr("已走 {n} 步", n=played) + " · " if played else "")

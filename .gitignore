@@ -4,3 +4,4 @@ config.json
 templates.json
 dist/
 _build_lang.py
+autoplay_log.txt

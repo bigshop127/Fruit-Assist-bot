@@ -56,6 +56,7 @@ def main():
         # 別動到使用者真正的設定檔與樣板庫
         A.CONFIG_PATH = os.path.join(sandbox, "config.json")
         A.TEMPLATES_PATH = os.path.join(sandbox, "templates.json")
+        A.AUTOPLAY_LOG_PATH = os.path.join(sandbox, "autoplay_log.txt")
 
         full = np.asarray(Image.open(SHOT).convert("RGB"))
         l, t, w, h = TRUE_REGION
@@ -318,6 +319,7 @@ def main():
         e.rec.readable = False
         st = e.step()
         check("動畫期過了還讀不到 → 停手", not e.autoplay, f"{st.kind}: {st.message}")
+
         check("訊息有說自動操控停了", "自動操控先停著" in st.message, st.message)
         check("認不得停手是『可接回去』的", e.autoplay_resumable)
         for _ in range(5):
@@ -326,6 +328,69 @@ def main():
         e.rec.readable = True
         e.stop_autoplay()   # 使用者自己按停止 → 就不該再自己接回去
         check("非辨識問題的停手會清掉記號", not e.autoplay_resumable)
+
+        e, ctl = build_auto(animation_grace=0.0)
+        e.autoplay = True
+        pump(e, 2)
+        e.rec.readable = False
+        e.step()
+        # 2026-11-21：遊戲跳彈窗（合成櫻桃的任務完成）擋住盤面，自動玩停了就不再動。
+        # 改成畫面恢復正常就自己接回去。
+        e.rec.readable = True
+        st = pump(e, 2)
+        check("彈窗消失、盤面讀得懂 → 自己接回去", e.autoplay and "接回去" in st.message,
+              f"{st.kind}: {st.message}")
+        with open(A.AUTOPLAY_LOG_PATH, encoding="utf-8") as f:
+            log = f.read()
+        check("停下的原因有寫進記錄檔", "停止 [" in log and "接回去" in log, log[-200:])
+
+        e, ctl = build_auto()   # 滑了沒反應 → 停
+        e.autoplay = True
+        for _ in range(20):
+            if e.step().kind == "stopped":
+                break
+        pump(e, 4)
+        check("滑了沒反應而停：盤面沒變就不接回去（免得一直空滑）", not e.autoplay)
+        e.rec.cells = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 2]
+        pump(e, 2)
+        check("盤面自己變了（彈窗被關掉）→ 接回去", e.autoplay)
+
+        e, ctl = build_auto()
+        e.autoplay = True
+        ctl.raise_next = A.C.InputError("adb 一時沒回應")
+        pump(e, 2)
+        pump(e, 2)
+        check("adb 一時送不出去 → 下一輪自己接回去", e.autoplay and len(ctl.calls) >= 1, f"{ctl.calls}")
+
+        e, ctl = build_auto()
+        e.autoplay = True
+        pump(e, 2)
+        e.rec.cells = DEAD
+        pump(e, 2)
+        e.rec.cells = TRUE_BOARD
+        pump(e, 2)
+        check("遊戲結束停下的不會自己接回去", not e.autoplay)
+
+        e, ctl = build_auto(animation_grace=0.0)
+        e.autoplay = True
+        e.RESUME_LIMIT = (2, 300.0)
+        for _ in range(4):
+            pump(e, 2)
+            e.rec.readable = False
+            e.step()
+            e.rec.readable = True
+        pump(e, 2)
+        check("短時間內接回太多次就不再接", not e.autoplay and not e.autoplay_resumable)
+
+        e, ctl = build_auto(animation_grace=0.0)
+        e.autoplay = True
+        pump(e, 2)
+        e.rec.readable = False
+        e.step()
+        e._stopped_at -= e.RESUME_WINDOW + 1
+        e.rec.readable = True
+        pump(e, 2)
+        check("停太久（超過 10 分鐘）就不自己接", not e.autoplay)
 
         e, ctl = build_auto()
         e.autoplay = True

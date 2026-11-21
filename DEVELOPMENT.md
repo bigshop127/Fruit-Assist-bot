@@ -116,6 +116,11 @@ python app.py
   裡的位置，以 (序號, 盤面寬, 高) 快取；連續滑了沒反應時清快取重找。相似度 < 0.55 就停手並說明。
   BlueStacks 的 ADB 開關是 `C:\ProgramData\BlueStacks_nxt\bluestacks.conf` 的 `bst.enable_adb_access`，
   改完要重開模擬器；多開實例的埠號在 `bst.instance.<名稱>.adb_port`。
+- **自己接回去**（11/21）：使用者跑了 17 步就停——合成櫻桃觸發任務完成彈窗，擋住盤面→認不得而停，舊設計要人按按鈕才接。
+  現在暫時性的停下（認不得／格線跑掉／抓不到畫面／adb 送不出去／滑了沒反應）都記成可接回去，10 分鐘內盤面
+  又讀得懂就自己接（`Engine._maybe_resume`）；「滑了沒反應」那種要等盤面自己變了才接，免得空滑循環；5 分鐘內
+  接回超過 5 次就放棄。遊戲結束、F8、暫停不接。每次停下／接回都寫一行到 `autoplay_log.txt`（gitignore），
+  視窗上顯示「HH:MM 停止：原因」。藏著的視窗**不再**於停下時自己跳出來（會搶走前景遊戲的焦點）。
 - **完全背景**（11/21）：「畫面來源」選 adb、序號填模擬器位址（如 `127.0.0.1:5565`），擷取也走 adb，模擬器
   被蓋住（例如開全螢幕遊戲）照樣跑；此時操控自動用 `AdbController`。網路序號會先 `adb connect`，擷取改用
   `screencap` 原始格式（`decode_raw_screencap`，BlueStacks 1600x900 約 0.24 秒；PNG 約 0.53 秒），USB 手機維持 PNG。
