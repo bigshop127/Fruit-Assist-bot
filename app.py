@@ -61,6 +61,7 @@ from tkinter import messagebox, ttk  # noqa: E402
 
 import adb as ADB  # noqa: E402
 import control as C  # noqa: E402
+import fishcalc as F  # noqa: E402
 import solver as S  # noqa: E402
 import vision as V  # noqa: E402
 from i18n import tr  # noqa: E402
@@ -131,6 +132,12 @@ class Config:
     # 介面語言 "zh" / "en"；None＝跟著下載的版本（中文版 exe / 英文版 exe）。
     # 實際讀取在 i18n.py（啟動當下就要決定），這裡只是讓存檔時不會把它吃掉。
     language: Optional[str] = None
+
+    # -- 介面 --
+    compact: bool = True                # 精簡模式：只留箭頭＋常用按鈕，盤面／評分／工具收起來
+    show_fish: bool = False             # 魚符計算區有沒有展開
+    fish: int = 0                       # 上次填的魚符數
+    hide_key: str = "F9"                # 隱藏／叫回視窗的快捷鍵（全域，不用切視窗）
 
     @classmethod
     def load(cls) -> "Config":
@@ -1189,6 +1196,9 @@ class SettingsDialog(tk.Toplevel):
         self._choice_row(right, tr("緊急停止鍵"), "panic_key",
                          {k: k for k in C.PANIC_KEYS}, cfg.panic_key,
                          tr("按下去就立刻停手，不用切視窗"))
+        self._choice_row(right, tr("隱藏視窗鍵"), "hide_key",
+                         {k: k for k in C.PANIC_KEYS}, cfg.hide_key,
+                         tr("按一下藏起來、再按一下叫回來"))
         for spec in AUTO_FIELDS:
             self._number_row(right, cfg, spec)
 
@@ -1296,9 +1306,12 @@ class SettingsDialog(tk.Toplevel):
                 return
             parsed[key] = value
 
-        for key in ("autoplay_method", "panic_key", "capture_source"):
+        for key in ("autoplay_method", "panic_key", "hide_key", "capture_source"):
             var, reverse = self.vars[key]
             parsed[key] = reverse[var.get()]
+        if parsed["hide_key"] == parsed["panic_key"]:
+            self.hint.config(text=tr("「隱藏視窗鍵」不能跟「緊急停止鍵」用同一個鍵"))
+            return
         parsed["adb_serial"] = self.vars["adb_serial"].get().strip() or None
 
         source_changed = parsed["capture_source"] != self.app.cfg.capture_source
@@ -1321,9 +1334,9 @@ class SettingsDialog(tk.Toplevel):
 
 # ---------------------------------------------------------------- 主視窗
 
-def btn_style(bg: str = BG_PANEL, fg: str = FG) -> dict:
-    return dict(bg=bg, fg=fg, font=(UI_FONT, 10), relief="flat", bd=0,
-                padx=12, pady=6, activebackground="#39404a", activeforeground=FG,
+def btn_style(bg: str = BG_PANEL, fg: str = FG, small: bool = False) -> dict:
+    return dict(bg=bg, fg=fg, font=(UI_FONT, 9 if small else 10), relief="flat", bd=0,
+                padx=8 if small else 12, pady=3 if small else 6, activebackground="#39404a", activeforeground=FG,
                 cursor="hand2", highlightthickness=0)
 
 
@@ -1336,6 +1349,13 @@ class AssistApp(tk.Tk):
         self.queue: "queue.Queue[Status]" = queue.Queue()
         self.worker = Worker(self.engine, self.lock, self.queue)
         self.last_reading: Optional[V.Reading] = None
+        self.last_cells: Optional[List[int]] = None
+        self._hidden = False
+        self._hidden_autoplay = False
+        self._hide_key_down = False
+        # 還沒校準／還沒標記的人要用到「詳細」裡的工具按鈕，精簡模式先不要藏起來
+        if self.cfg.region is None or len(self.engine.db) == 0:
+            self.cfg.compact = False
         self._flash_until = 0.0
 
         self.title(tr("水果 2048 輔助器"))
@@ -1372,70 +1392,213 @@ class AssistApp(tk.Tk):
 
     # -- 版面 --
     def _build_ui(self) -> None:
+        """精簡模式只留：箭頭＋方向、自動玩／暫停／魚符／詳細／隱藏、一行狀態。
+        盤面、四方向評分、校準等工具按鈕收在「詳細」裡，魚符計算收在「魚符」裡。
+        """
         head = tk.Frame(self, bg=BG)
-        head.pack(fill="x", padx=16, pady=(14, 4))
+        head.pack(fill="x", padx=10, pady=(8, 2))
 
-        self.arrow = tk.Label(head, text="—", bg=BG, fg=FG_DIM, font=(UI_FONT, 56, "bold"))
+        self.arrow = tk.Label(head, text="—", bg=BG, fg=FG_DIM, font=(UI_FONT, 30, "bold"))
         self.arrow.pack(side="left")
 
         head_text = tk.Frame(head, bg=BG)
-        head_text.pack(side="left", padx=(14, 0), anchor="center")
+        head_text.pack(side="left", padx=(8, 0), anchor="center")
         self.move_name = tk.Label(head_text, text=tr("等待中"), bg=BG, fg=FG_DIM,
-                                  font=(UI_FONT, 22, "bold"))
+                                  font=(UI_FONT, 14, "bold"))
         self.move_name.pack(anchor="w")
-        self.move_hint = tk.Label(head_text, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 10))
+        self.move_hint = tk.Label(head_text, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 8))
         self.move_hint.pack(anchor="w")
 
-        body = tk.Frame(self, bg=BG)
-        body.pack(fill="x", padx=16, pady=(6, 0))
+        auto = tk.Frame(self, bg=BG)
+        auto.pack(fill="x", padx=10, pady=(4, 0))
+        self.auto_btn = tk.Button(auto, text=tr("▶ 開始自動玩"), command=self.toggle_autoplay,
+                                  **btn_style(bg="#2f6b38", fg="#dff5e2", small=True))
+        self.auto_btn.pack(side="left", padx=(0, 2))
+        self.pause_btn = tk.Button(auto, text=tr("暫停"), command=self.toggle_pause,
+                                   **btn_style(small=True))
+        self.pause_btn.pack(side="left", padx=2)
+        self.fish_btn = tk.Button(auto, text=tr("魚符"), command=self.toggle_fish,
+                                  **btn_style(small=True))
+        self.fish_btn.pack(side="left", padx=2)
+        self.detail_btn = tk.Button(auto, text=tr("詳細"), command=self.toggle_compact,
+                                    **btn_style(small=True))
+        self.detail_btn.pack(side="left", padx=2)
+        self.hide_btn = tk.Button(auto, text=tr("隱藏 {key}", key=self.cfg.hide_key),
+                                  command=self.hide_window, **btn_style(small=True))
+        self.hide_btn.pack(side="left", padx=2)
 
-        board_wrap = tk.Frame(body, bg="#12141a", padx=6, pady=6)
+        self.auto_note = tk.Label(self, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 8), anchor="w")
+        self.auto_note.pack(fill="x", padx=10, pady=(3, 0))
+
+        self.status = tk.Label(self, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 8),
+                               wraplength=300, justify="left", anchor="w")
+        self.status.pack(fill="x", padx=10, pady=(1, 6))
+
+        # ---- 魚符計算（可收起）
+        self.fish_frame = tk.Frame(self, bg=BG_PANEL, padx=8, pady=6)
+        line = tk.Frame(self.fish_frame, bg=BG_PANEL)
+        line.pack(fill="x")
+        tk.Label(line, text=tr("手上魚符"), bg=BG_PANEL, fg=FG, font=(UI_FONT, 9)).pack(side="left")
+        self.fish_var = tk.StringVar(value=str(self.cfg.fish or ""))
+        tk.Entry(line, textvariable=self.fish_var, width=7, justify="center",
+                 font=(UI_FONT, 10), bg=BG, fg=FG, insertbackground=FG,
+                 relief="flat").pack(side="left", padx=(6, 0))
+        tk.Label(line, text=tr("（1 魚符＝1 顆 1 號）"), bg=BG_PANEL, fg=FG_DIM,
+                 font=(UI_FONT, 8)).pack(side="left", padx=(6, 0))
+        self.fish_out = tk.Label(self.fish_frame, text="", bg=BG_PANEL, fg=FG, font=(UI_FONT, 9),
+                                 justify="left", anchor="w", wraplength=290)
+        self.fish_out.pack(fill="x", pady=(4, 0))
+        self.fish_var.trace_add("write", lambda *_: self._update_fish())
+
+        # ---- 詳細（可收起）：盤面、評分、工具
+        self.detail = tk.Frame(self, bg=BG)
+        body = tk.Frame(self.detail, bg=BG)
+        body.pack(fill="x", padx=10, pady=(2, 0))
+
+        board_wrap = tk.Frame(body, bg="#12141a", padx=3, pady=3)
         board_wrap.pack(side="left")
         self.cells: List[tk.Label] = []
         for i in range(16):
             r, c = divmod(i, 4)
             lbl = tk.Label(board_wrap, text="", width=3, height=1,
-                           font=(UI_FONT, 15, "bold"), bg=fruit_color(0), fg=FG)
-            lbl.grid(row=r, column=c, padx=2, pady=2, ipadx=2, ipady=6)
+                           font=(UI_FONT, 10, "bold"), bg=fruit_color(0), fg=FG)
+            lbl.grid(row=r, column=c, padx=1, pady=1, ipady=1)
             self.cells.append(lbl)
 
         rank = tk.Frame(body, bg=BG)
-        rank.pack(side="left", padx=(16, 0), anchor="n")
-        tk.Label(rank, text=tr("四個方向評分"), bg=BG, fg=FG_DIM, font=(UI_FONT, 9)).pack(anchor="w")
+        rank.pack(side="left", padx=(10, 0), anchor="n")
+        tk.Label(rank, text=tr("四個方向評分"), bg=BG, fg=FG_DIM, font=(UI_FONT, 8)).pack(anchor="w")
         self.rank_rows: List[tk.Label] = []
         for _ in range(4):
-            lbl = tk.Label(rank, text="", bg=BG, fg=FG_DIM, font=("Consolas", 10), anchor="w")
-            lbl.pack(anchor="w", pady=1)
+            lbl = tk.Label(rank, text="", bg=BG, fg=FG_DIM, font=("Consolas", 9), anchor="w")
+            lbl.pack(anchor="w")
             self.rank_rows.append(lbl)
 
-        self.status = tk.Label(self, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 9),
-                               wraplength=430, justify="left", anchor="w")
-        self.status.pack(fill="x", padx=16, pady=(10, 0))
-
-        auto = tk.Frame(self, bg=BG)
-        auto.pack(fill="x", padx=16, pady=(12, 0))
-        self.auto_btn = tk.Button(auto, text=tr("▶ 開始自動玩"), command=self.toggle_autoplay,
-                                  **btn_style(bg="#2f6b38", fg="#dff5e2"))
-        self.auto_btn.pack(side="left")
-        self.auto_note = tk.Label(auto, text="", bg=BG, fg=FG_DIM, font=(UI_FONT, 9))
-        self.auto_note.pack(side="left", padx=(10, 0))
-        self._sync_auto_note()
-
-        bar = tk.Frame(self, bg=BG)
-        bar.pack(fill="x", padx=12, pady=12)
+        bar = tk.Frame(self.detail, bg=BG)
+        bar.pack(fill="x", padx=8, pady=(6, 0))
         tk.Button(bar, text=tr("① 校準盤面"), command=self.start_calibration,
-                  **btn_style()).pack(side="left", padx=2)
+                  **btn_style(small=True)).pack(side="left", padx=2)
         tk.Button(bar, text=tr("② 標記水果"), command=self.open_labeler,
-                  **btn_style()).pack(side="left", padx=2)
+                  **btn_style(small=True)).pack(side="left", padx=2)
         tk.Button(bar, text=tr("重新吸附"), command=self.refit,
-                  **btn_style()).pack(side="left", padx=2)
-        self.pause_btn = tk.Button(bar, text=tr("暫停"), command=self.toggle_pause, **btn_style())
-        self.pause_btn.pack(side="left", padx=2)
+                  **btn_style(small=True)).pack(side="left", padx=2)
         tk.Button(bar, text="⚙", command=lambda: SettingsDialog(self),
-                  **btn_style()).pack(side="right", padx=2)
+                  **btn_style(small=True)).pack(side="left", padx=2)
 
-        self.footer = tk.Label(self, text="", bg=BG, fg="#5c626b", font=("Consolas", 8))
-        self.footer.pack(fill="x", padx=16, pady=(0, 8))
+        self.footer = tk.Label(self.detail, text="", bg=BG, fg="#5c626b", font=("Consolas", 7),
+                               anchor="w")
+        self.footer.pack(fill="x", padx=10, pady=(4, 6))
+
+        self._sync_auto_note()
+        self._layout_panels()
+        self._update_fish()
+
+    def _layout_panels(self) -> None:
+        """依設定把「魚符」「詳細」兩塊收起或展開，並讓視窗重新量尺寸。
+
+        視窗左上角固定不動（只往下／往右長），展開收起不會把視窗挪去別的地方。
+        """
+        self.fish_frame.pack_forget()
+        self.detail.pack_forget()
+        if self.cfg.show_fish:
+            self.fish_frame.pack(fill="x", padx=10, pady=(0, 6))
+        if not self.cfg.compact:
+            self.detail.pack(fill="x")
+        on, off = dict(bg="#39404a", fg=FG), dict(bg=BG_PANEL, fg=FG)
+        self.fish_btn.config(**(on if self.cfg.show_fish else off))
+        self.detail_btn.config(**(off if self.cfg.compact else on))
+        try:
+            self.geometry("")
+        except tk.TclError:
+            pass
+
+    def _save_ui_pref(self) -> None:
+        try:
+            with self.lock:
+                self.cfg.save()
+        except OSError:
+            pass
+
+    def toggle_compact(self) -> None:
+        self.cfg.compact = not self.cfg.compact
+        self._layout_panels()
+        self._save_ui_pref()
+
+    def toggle_fish(self) -> None:
+        self.cfg.show_fish = not self.cfg.show_fish
+        self._layout_panels()
+        self._save_ui_pref()
+        self._update_fish()
+
+    def _fish_count(self) -> Optional[int]:
+        raw = self.fish_var.get().strip().replace(",", "")
+        if not raw:
+            return 0
+        try:
+            n = int(raw)
+        except ValueError:
+            return None
+        return n if n >= 0 else None
+
+    def _update_fish(self) -> None:
+        fish = self._fish_count()
+        if fish is None:
+            self.fish_out.config(text=tr("魚符請填整數"), fg=WARN)
+            return
+        if fish != self.cfg.fish:
+            self.cfg.fish = fish
+            self._save_ui_pref()
+        if not self.cfg.show_fish:
+            return
+        cells = self.last_cells
+        if not cells:
+            self.fish_out.config(text=tr("還沒讀到盤面"), fg=FG_DIM)
+            return
+        p = F.plan(cells, fish)
+        lines = [tr("盤面＝{board:,} 顆 1 號，加魚符共 {total:,}", board=p.board, total=p.total)]
+        if p.best_level:
+            best = tr("{lv} 號", lv=p.best_level) + (f" ×{p.best_count}" if p.best_count > 1 else "")
+            lines.append(tr("理論最高：{best}（多出 {left:,}）", best=best, left=p.leftover))
+        for t in p.targets:
+            name = tr("{lv} 號", lv=t.label_level) + (f" ×{t.count}" if t.count > 1 else "")
+            if t.short:
+                lines.append(tr("  {name}：要 {need:,} 魚符，還差 {short:,}",
+                                name=name, need=t.fish_needed, short=t.short))
+            else:
+                lines.append(tr("  {name}：要 {need:,} 魚符 ✓", name=name, need=t.fish_needed))
+        lines.append(tr("理論值：假設每顆都完美合進去，實際會低一點"))
+        self.fish_out.config(text="\n".join(lines), fg=FG)
+
+    # -- 隱藏／叫回 --
+    def hide_window(self) -> None:
+        """整個視窗藏起來（工作列也看不到），按隱藏鍵叫回來。
+
+        藏起來時背景偵測照跑、自動玩照玩；自動玩如果自己停了（遊戲結束、
+        認不得、出錯、按了緊急停止）會自動跳回來，免得不知道它早就不動了。
+        """
+        self._hidden = True
+        self._hidden_autoplay = self.engine.autoplay
+        self.withdraw()
+
+    def show_window(self) -> None:
+        self._hidden = False
+        self.deiconify()
+        self.attributes("-topmost", True)
+        self.lift()
+
+    def _poll_hide_key(self) -> None:
+        down = C.panic_pressed(self.cfg.hide_key)
+        if down and not self._hide_key_down:
+            if self._hidden:
+                self.show_window()
+            else:
+                self.hide_window()
+        self._hide_key_down = down
+        if self._hidden:
+            if self.engine.autoplay:
+                self._hidden_autoplay = True
+            elif self._hidden_autoplay:
+                self.show_window()
 
     # -- 事件 --
     def _pump(self) -> None:
@@ -1446,6 +1609,7 @@ class AssistApp(tk.Tk):
             self._sync_auto_note()
             self.flash(tr("已按下 {key}，自動操控停止", key=self.cfg.panic_key))
 
+        self._poll_hide_key()
         self._sync_pause_btn()
 
         latest: Optional[Status] = None
@@ -1478,12 +1642,13 @@ class AssistApp(tk.Tk):
         )
         played = self.engine.moves_played
         if on:
-            self.auto_note.config(text=tr("執行中 · 已走 {n} 步 · 按 {key} 隨時停止", n=played, key=self.cfg.panic_key),
+            self.auto_note.config(text=tr("已走 {n} 步 · {key} 停止 · {hide} 隱藏／叫回",
+                                          n=played, key=self.cfg.panic_key, hide=self.cfg.hide_key),
                                   fg=ACCENT)
         else:
             self.auto_note.config(
-                text=tr("開啟後程式會自己控制滑鼠（已走 {n} 步）", n=played) if played
-                     else tr("開啟後程式會自己控制滑鼠滑動盤面"),
+                text=(tr("已走 {n} 步", n=played) + " · " if played else "")
+                     + tr("{hide} 隱藏／叫回視窗", hide=self.cfg.hide_key),
                 fg=FG_DIM)
 
     def _render(self, st: Status) -> None:
@@ -1497,6 +1662,9 @@ class AssistApp(tk.Tk):
             self.flash(st.message, 8)
 
         if st.cells:
+            if st.cells != self.last_cells:
+                self.last_cells = list(st.cells)
+                self._update_fish()
             for i, value in enumerate(st.cells[:16]):
                 unknown = st.reading is not None and st.reading.cells[i] is None
                 self.cells[i].config(
@@ -1723,6 +1891,8 @@ class AssistApp(tk.Tk):
             self.cfg.save()
             self.engine.rebuild()
         self.attributes("-alpha", self.cfg.opacity)
+        self.hide_btn.config(text=tr("隱藏 {key}", key=self.cfg.hide_key))
+        self._sync_auto_note()
         self.flash(tr("設定已套用"))
 
     def _overlaps_board(self) -> bool:
@@ -1732,7 +1902,7 @@ class AssistApp(tk.Tk):
         所以寧可事先擋下來講清楚。
         """
         region = self.engine.region
-        if region is None:
+        if region is None or self._hidden:
             return False
         self.update_idletasks()
         left = self.winfo_rootx()

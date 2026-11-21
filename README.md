@@ -72,6 +72,9 @@ Android 模擬器裡（例如 BlueStacks、雷電模擬器 LDPlayer、MuMu 模�
 - **讓它自己玩**：按綠色「▶ 開始自動玩」，它會用滑鼠在模擬器上滑動。
   - **要停：按 `F8`**（不用切回輔助器視窗），或按紅色「■ 停止自動玩」。
   - 自動玩的時候會借用你的滑鼠，這段時間別同時用電腦做別的事。
+- **視窗太佔位置**：平常只顯示箭頭和一排按鈕；按「詳細」才展開盤面、評分和「① 校準盤面」等工具（還沒校準時會自動展開）。
+- **藏起來**：按「隱藏 F9」或直接按 `F9`，視窗整個消失、程式照跑；再按一次 `F9` 叫回來。自動玩自己停下來時（遊戲結束、認不得）視窗會自動跳回來。快捷鍵可以在 ⚙ 換。
+- **魚符計算**：按「魚符」，填上遊戲裡的魚符數，會算出「現在盤面＋魚符」理論上最高合得到幾號，以及下一階還差幾個魚符（1 個魚符＝1 顆 1 號，兩個 1 合一個 2、四個 1 合一個 3…；這是完美合成的上限，實際會低一點）。
 
 ### 注意事項
 - 輔助器視窗**不要蓋在盤面上**，把它拖到模擬器旁邊。
@@ -141,6 +144,9 @@ Fruit numbers: 1 apple · 2 orange · 3 banana · 4 watermelon · 5 grape · 6 l
 - **Auto-play**: click the green `▶ Start auto-play` button and it will swipe in the emulator with your mouse.
   - **To stop: press `F8`** (works without switching windows), or click the red `■ Stop auto-play`.
   - Auto-play borrows your mouse — don't use the PC for anything else meanwhile.
+- **Compact window**: normally only the arrow and one row of buttons are shown; click `Details` for the board, scores and the `① Calibrate board` tools (they open by themselves until you've calibrated).
+- **Hide it**: click `Hide F9` or press `F9` — the window disappears but keeps working; press `F9` again to bring it back. If auto-play stops by itself (game over, unknown fruit) the window pops back up. The key can be changed in ⚙.
+- **Fish token calculator**: click `Fish`, type your token count, and it shows the highest fruit the board plus your tokens can theoretically reach, and how many tokens the next step needs (1 token = one #1 fruit; two #1 make a #2, four make a #3… — a perfect-merge upper bound, real play ends lower).
 
 ### Tips
 - **Don't let the assistant window cover the board** — put it beside the emulator.
