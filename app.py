@@ -1152,7 +1152,7 @@ METHOD_LABELS = {
 }
 CAPTURE_SOURCE_LABELS = {
     "screen": tr("PC 模擬器（螢幕擷取）"),
-    "adb": tr("手機（USB 接 adb）"),
+    "adb": tr("adb（手機或模擬器，可完全背景）"),
 }
 
 # (欄位, 標題, 說明, 型別, 下限, 上限)
@@ -1221,8 +1221,8 @@ class SettingsDialog(tk.Toplevel):
         self._choice_row(far, tr("來源"), "capture_source",
                          CAPTURE_SOURCE_LABELS, cfg.capture_source,
                          tr("改這個之後要重新校準一次"))
-        self._text_row(far, tr("手機序號"), "adb_serial", cfg.adb_serial,
-                       tr("adb devices 看到的那串；留白就自動挑唯一一台"))
+        self._text_row(far, tr("adb 序號"), "adb_serial", cfg.adb_serial,
+                       tr("手機填 adb devices 看到的；模擬器填位址如 127.0.0.1:5565；留白自動挑唯一一台"))
 
         self.hint = tk.Label(self, bg=BG, fg=ERROR, font=(UI_FONT, 9), wraplength=460)
         self.hint.pack()

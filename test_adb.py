@@ -299,6 +299,37 @@ def main():
         ADB._run = real_run
         ADB.EmulatorAdbController._cache.clear()
 
+    print("8) 模擬器（網路序號）：先 adb connect、擷取走原始格式")
+    import struct
+    w, h = 6, 4
+    px = np.zeros((h, w, 4), np.uint8)
+    px[0, 0] = (255, 0, 0, 255)
+    px[3, 5] = (0, 0, 255, 255)
+    for hdr in (struct.pack("<4I", w, h, 1, 0), struct.pack("<3I", w, h, 1)):
+        img = ADB.decode_raw_screencap(hdr + px.tobytes())
+        check(f"原始格式解得出來（表頭 {len(hdr)} bytes）",
+              img.shape == (h, w, 3) and tuple(img[0, 0]) == (255, 0, 0) and tuple(img[3, 5]) == (0, 0, 255))
+    try:
+        ADB.decode_raw_screencap(b"garbage-garbage")
+        check("壞掉的原始資料要丟 AdbError", False)
+    except ADB.AdbError:
+        check("壞掉的原始資料要丟 AdbError", True)
+
+    real_run = ADB._run
+    try:
+        raw = struct.pack("<4I", w, h, 1, 0) + px.tobytes()
+        fake = FakeRun([(0, b"connected", b""), (0, b"List of devices attached\n127.0.0.1:5565\tdevice\n", b""),
+                        (0, raw, b"")])
+        ADB._run = fake
+        g = ADB.AdbGrabber(serial="127.0.0.1:5565", adb_path="adb")
+        img = g.grab(V.Region(0, 0, w, h))
+        check("先 connect 再挑裝置", fake.calls[0] == ("connect", "127.0.0.1:5565"), f"{fake.calls}")
+        check("網路序號擷取不加 -p", fake.calls[2] == ("-s", "127.0.0.1:5565", "exec-out", "screencap"),
+              f"{fake.calls[2]}")
+        check("擷取結果正確", img.shape == (h, w, 3))
+    finally:
+        ADB._run = real_run
+
     print()
     if _failures:
         print(f"有 {len(_failures)} 項失敗 ❌")

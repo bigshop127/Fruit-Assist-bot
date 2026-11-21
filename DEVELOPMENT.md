@@ -116,6 +116,9 @@ python app.py
   裡的位置，以 (序號, 盤面寬, 高) 快取；連續滑了沒反應時清快取重找。相似度 < 0.55 就停手並說明。
   BlueStacks 的 ADB 開關是 `C:\ProgramData\BlueStacks_nxt\bluestacks.conf` 的 `bst.enable_adb_access`，
   改完要重開模擬器；多開實例的埠號在 `bst.instance.<名稱>.adb_port`。
+- **完全背景**（11/21）：「畫面來源」選 adb、序號填模擬器位址（如 `127.0.0.1:5565`），擷取也走 adb，模擬器
+  被蓋住（例如開全螢幕遊戲）照樣跑；此時操控自動用 `AdbController`。網路序號會先 `adb connect`，擷取改用
+  `screencap` 原始格式（`decode_raw_screencap`，BlueStacks 1600x900 約 0.24 秒；PNG 約 0.53 秒），USB 手機維持 PNG。
 - **魚符計算**（`fishcalc.py`，測試 `test_fishcalc.py`）：n 號＝2^(n-1) 顆 1 號，1 魚符＝1 顆 1 號。
   總值＝盤面換算＋魚符，能湊出的最大 2 的次方就是理論上限；水果只到 12 號，再上去用「12 號 ×k」。
   另外列出下三個目標各要幾個魚符、還差幾個。是完美合成的上限，不考慮 16 格放不下。

@@ -130,6 +130,35 @@ def screen_size(adb_path: str, serial: str) -> Tuple[int, int]:
     return int(m.group(1)), int(m.group(2))
 
 
+def is_network_serial(serial: Optional[str]) -> bool:
+    """127.0.0.1:5565 這種走 TCP 的序號（PC 模擬器、無線偵錯）。"""
+    return bool(serial) and ":" in serial
+
+
+def ensure_connected(adb_path: str, serial: Optional[str]) -> None:
+    """網路序號要先 `adb connect` 才會出現在 `adb devices`；已連上的話是無害的。"""
+    if is_network_serial(serial):
+        _run(adb_path, "connect", serial, timeout=8.0)
+
+
+def decode_raw_screencap(data: bytes) -> np.ndarray:
+    """解 `screencap`（不加 -p）的原始輸出：表頭（寬、高、格式[、色域]）＋RGBA。
+
+    比 PNG 快一倍多（裝置端不用壓縮）：BlueStacks 1600x900 實測 PNG 約 0.53 秒、
+    原始格式約 0.24 秒。表頭 Android 8 以前 12 bytes、之後 16 bytes，用總長度反推。
+    """
+    if len(data) < 12:
+        raise AdbError(f"screencap 回傳的資料太短（{len(data)} bytes）")
+    w, h, fmt = np.frombuffer(data[:12], dtype="<u4")
+    w, h = int(w), int(h)
+    body = w * h * 4
+    header = len(data) - body
+    if w <= 0 or h <= 0 or header not in (12, 16) or int(fmt) not in (1, 2):
+        raise AdbError(f"看不懂 screencap 原始格式（{w}x{h} 格式 {int(fmt)}，{len(data)} bytes）")
+    px = np.frombuffer(data, dtype=np.uint8, count=body, offset=header).reshape(h, w, 4)
+    return px[..., :3].copy()
+
+
 class AdbGrabber:
     """跟 vision.ScreenGrabber 介面相容，換成從手機抓畫面。
 
@@ -149,11 +178,20 @@ class AdbGrabber:
         path = self._adb_path or find_adb()
         self._adb_path = path
         if self._resolved_serial is None:
+            ensure_connected(path, self._serial)
             self._resolved_serial = pick_device(path, self._serial)
         return path, self._resolved_serial
 
     def _screencap(self) -> np.ndarray:
         path, serial = self._resolve()
+        if is_network_serial(serial):
+            # 本機模擬器走 TCP，傳 5.7MB 原始畫面比裝置端壓 PNG 快得多；
+            # USB 手機反過來（傳輸是瓶頸），維持 PNG。
+            proc = _run(path, "-s", serial, "exec-out", "screencap", timeout=8.0)
+            if proc.returncode != 0 or not proc.stdout:
+                self._resolved_serial = None   # 模擬器重開過的話下次重新 connect
+                raise AdbError(f"screencap 失敗：{proc.stderr.decode('utf-8', 'replace').strip()}")
+            return decode_raw_screencap(proc.stdout)
         proc = _run(path, "-s", serial, "exec-out", "screencap", "-p", timeout=8.0)
         if proc.returncode != 0 or not proc.stdout:
             raise AdbError(f"screencap 失敗：{proc.stderr.decode('utf-8', 'replace').strip()}")
@@ -206,6 +244,7 @@ class AdbController:
         path = self._adb_path or find_adb()
         self._adb_path = path
         if self._resolved_serial is None:
+            ensure_connected(path, self._serial)
             self._resolved_serial = pick_device(path, self._serial)
         return path, self._resolved_serial
 
@@ -322,9 +361,8 @@ class EmulatorAdbController:
     def _path(self) -> str:
         if self._adb_path is None:
             self._adb_path = find_adb()
-        if not self._connected and ":" in self.serial:
-            # 127.0.0.1:5565 這種網路序號要先 connect 一次（已連上的話是無害的）
-            _run(self._adb_path, "connect", self.serial, timeout=8.0)
+        if not self._connected:
+            ensure_connected(self._adb_path, self.serial)
             self._connected = True
         return self._adb_path
 
@@ -373,4 +411,5 @@ class EmulatorAdbController:
 __all__ = [
     "AdbError", "AdbGrabber", "AdbController", "EmulatorAdbController", "locate_board",
     "find_adb", "list_devices", "pick_device", "screen_size",
+    "is_network_serial", "ensure_connected", "decode_raw_screencap",
 ]

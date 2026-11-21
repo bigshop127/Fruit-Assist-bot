@@ -74,6 +74,7 @@ Android 模擬器裡（例如 BlueStacks、雷電模擬器 LDPlayer、MuMu 模�
   - 自動玩的時候會借用你的滑鼠，這段時間別同時用電腦做別的事。
 - **視窗太佔位置**：平常只顯示箭頭和一排按鈕；按「詳細」才展開盤面、評分和「① 校準盤面」等工具（還沒校準時會自動展開）。
 - **背景滑動（不搶滑鼠）**：在模擬器設定開啟 ADB（BlueStacks：設定 → 進階 → Android 偵錯（ADB）），再到輔助器 ⚙「操控方式」選「背景滑動（模擬器 adb，不搶滑鼠）」，「模擬器 adb 位址」填那裡顯示的位址（例如 `127.0.0.1:5565`）。之後自動玩是直接在模擬器裡滑，你的滑鼠可以拿去做別的事；只要模擬器的盤面露在螢幕上、沒被別的視窗擋住就行。需要電腦裝有 adb（Android SDK Platform-Tools）。
+  - **連模擬器被蓋住也要跑**（例如同時開全螢幕遊戲）：⚙「畫面來源」再改成「adb（手機或模擬器，可完全背景）」、「adb 序號」填同一個位址，然後重新「① 校準盤面」（會改成對著模擬器截圖框）。讀畫面每次約 0.25 秒，比螢幕擷取慢一點。
 - **藏起來**：按「隱藏 F9」或直接按 `F9`，視窗整個消失、程式照跑；再按一次 `F9` 叫回來。自動玩自己停下來時（遊戲結束、認不得）視窗會自動跳回來。快捷鍵可以在 ⚙ 換。
 - **魚符計算**：按「魚符」，填上遊戲裡的魚符數，會算出「現在盤面＋魚符」理論上最高合得到幾號，以及下一階還差幾個魚符（1 個魚符＝1 顆 1 號，兩個 1 合一個 2、四個 1 合一個 3…；這是完美合成的上限，實際會低一點）。
 
@@ -147,6 +148,7 @@ Fruit numbers: 1 apple · 2 orange · 3 banana · 4 watermelon · 5 grape · 6 l
   - Auto-play borrows your mouse — don't use the PC for anything else meanwhile.
 - **Compact window**: normally only the arrow and one row of buttons are shown; click `Details` for the board, scores and the `① Calibrate board` tools (they open by themselves until you've calibrated).
 - **Background swipe (mouse stays free)**: enable ADB in the emulator (BlueStacks: Settings → Advanced → Android Debug Bridge), then in ⚙ set the control method to `Background swipe (emulator adb…)` and enter the address shown there (e.g. `127.0.0.1:5565`). Auto-play then swipes inside the emulator and your mouse is free for other work — just keep the emulator's board visible on screen. Requires adb (Android SDK Platform-Tools).
+  - **Keep running even when the emulator is covered** (e.g. while a full-screen game is open): also set ⚙ `Capture source` to `adb (phone or emulator…)` with the same address as `adb serial`, then calibrate again (you'll mark the board on an emulator screenshot). Each read takes about 0.25 s, a bit slower than screen capture.
 - **Hide it**: click `Hide F9` or press `F9` — the window disappears but keeps working; press `F9` again to bring it back. If auto-play stops by itself (game over, unknown fruit) the window pops back up. The key can be changed in ⚙.
 - **Fish token calculator**: click `Fish`, type your token count, and it shows the highest fruit the board plus your tokens can theoretically reach, and how many tokens the next step needs (1 token = one #1 fruit; two #1 make a #2, four make a #3… — a perfect-merge upper bound, real play ends lower).
 
