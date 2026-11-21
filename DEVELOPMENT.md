@@ -114,7 +114,7 @@ python app.py
   改成 `adb -s <emu_adb_serial> shell input swipe`。螢幕座標 → 模擬器像素的對應不去猜 BlueStacks 版面，
   而是第一次滑之前抓一張 adb 截圖，拿螢幕上那塊盤面做多尺度標準化互相關（FFT，約 0.8 秒）找出盤面在模擬器
   裡的位置，以 (序號, 盤面寬, 高) 快取；連續滑了沒反應時清快取重找。相似度 < 0.55 就停手並說明。
-  BlueStacks 的 ADB 開關是 `C:\ProgramData\BlueStacks_nxtluestacks.conf` 的 `bst.enable_adb_access`，
+  BlueStacks 的 ADB 開關是 `C:\ProgramData\BlueStacks_nxt\bluestacks.conf` 的 `bst.enable_adb_access`，
   改完要重開模擬器；多開實例的埠號在 `bst.instance.<名稱>.adb_port`。
 - **魚符計算**（`fishcalc.py`，測試 `test_fishcalc.py`）：n 號＝2^(n-1) 顆 1 號，1 魚符＝1 顆 1 號。
   總值＝盤面換算＋魚符，能湊出的最大 2 的次方就是理論上限；水果只到 12 號，再上去用「12 號 ×k」。
