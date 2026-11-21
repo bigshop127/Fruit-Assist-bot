@@ -48,8 +48,18 @@ def find_adb() -> str:
         os.path.expandvars(r"%ANDROID_HOME%\platform-tools\adb.exe"),
         os.path.expandvars(r"%ANDROID_SDK_ROOT%\platform-tools\adb.exe"),
     ]
+    # 模擬器自己附的 adb：只用模擬器的人不必另外裝 Platform-Tools
+    for root in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+        candidates += [
+            os.path.join(root, "BlueStacks_nxt", "HD-Adb.exe"),
+            os.path.join(root, "BlueStacks", "HD-Adb.exe"),
+            os.path.join(root, "Netease", "MuMuPlayer-12.0", "shell", "adb.exe"),
+            os.path.join(root, "Netease", "MuMu Player 12", "shell", "adb.exe"),
+        ]
+    candidates += [r"C:\LDPlayer\LDPlayer9\adb.exe", r"C:\LDPlayer\LDPlayer4.0\adb.exe"]
     for c in candidates:
-        if c and os.path.exists(c):
+        if c and "%" not in c and os.path.exists(c):
             return c
     raise AdbError(_t(
         "找不到 adb。請安裝 Android SDK Platform-Tools"
