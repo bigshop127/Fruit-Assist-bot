@@ -206,17 +206,18 @@ def resolve_network_serial(adb_path: str, serial: str) -> str:
     if _try_connect(adb_path, serial):
         _REDIRECT.pop(serial, None)
         return serial
-    host = serial.rsplit(":", 1)[0]
-    alive = [f"{host}:{port}" for port in _emulator_ports()
-             if f"{host}:{port}" != serial and _try_connect(adb_path, f"{host}:{port}")]
-    if len(alive) == 1:
-        _REDIRECT[serial] = alive[0]
-        return alive[0]
+    alive = alive_emulators(adb_path, serial.rsplit(":", 1)[0])
     if not alive:
         raise AdbError(_t("連不到模擬器「{serial}」，也沒找到其他開著 ADB 的模擬器。"
                           "確認模擬器有開、設定裡的 ADB 有打開。", serial=serial))
-    raise AdbError(_t("連不到模擬器「{serial}」，但找到好幾台開著的：{others}。"
-                      "請在 ⚙ 設定填你正在玩的那一台。", serial=serial, others="、".join(alive)))
+    # 好幾台開著時先挑第一台；如果盤面不在那台，Engine 會用 find_board_instance 換到對的那台
+    _REDIRECT[serial] = alive[0]
+    return alive[0]
+
+
+def alive_emulators(adb_path: str, host: str = "127.0.0.1") -> List[str]:
+    """目前開著 ADB、連得上的模擬器位址（BlueStacks 多開時每個實例一個）。"""
+    return [f"{host}:{port}" for port in _emulator_ports() if _try_connect(adb_path, f"{host}:{port}")]
 
 
 def scale_region(region: V.Region, sx: float, sy: float) -> V.Region:
@@ -286,6 +287,42 @@ class AdbGrabber:
 
     def _screencap(self) -> np.ndarray:
         path, serial = self._resolve()
+        return self._screencap_from(path, serial)
+
+    def find_board_instance(self, region: V.Region, looks_like_board) -> Optional[str]:
+        """盤面不在目前這台模擬器時，到其他開著的模擬器找；找到就換過去，回傳新序號。
+
+        使用者 BlueStacks「1」「2」都會開、哪一台在玩不一定。兩台同時開著時，光看
+        「連不連得上」分不出來，要看哪一台畫面上真的有讀得懂的盤面。
+        `looks_like_board(crop)` 由呼叫端提供（用樣板辨識判斷）。
+        """
+        if not is_network_serial(self._serial):
+            return None
+        path = self._adb_path or find_adb()
+        self._adb_path = path
+        current = self._resolved_serial
+        for other in alive_emulators(path, self._serial.rsplit(":", 1)[0]):
+            if other == current:
+                continue
+            try:
+                full = self._screencap_from(path, other)
+            except AdbError:
+                continue
+            h, w = full.shape[:2]
+            r = region
+            if self.reference_size and (w, h) != tuple(self.reference_size):
+                rw, rh = self.reference_size
+                r = scale_region(region, w / rw, h / rh)
+            if r.left < 0 or r.top < 0 or r.right > w or r.bottom > h:
+                continue
+            if looks_like_board(full[r.top:r.bottom, r.left:r.right]):
+                self._resolved_serial = other
+                _REDIRECT[self._serial] = other
+                self.last_size = (w, h)
+                return other
+        return None
+
+    def _screencap_from(self, path: str, serial: str) -> np.ndarray:
         if is_network_serial(serial):
             # 本機模擬器走 TCP，傳 5.7MB 原始畫面比裝置端壓 PNG 快得多；
             # USB 手機反過來（傳輸是瓶頸），維持 PNG。
@@ -339,17 +376,22 @@ class AdbController:
 
     def __init__(self, serial: Optional[str] = None, adb_path: Optional[str] = None,
                  duration: float = 0.14, fraction: float = 0.35,
-                 region_mapper=None) -> None:
+                 region_mapper=None, serial_provider=None) -> None:
         self._adb_path = adb_path
         self._serial = serial
         self._resolved_serial: Optional[str] = None
         self.duration = duration
         self.fraction = fraction
         self.region_mapper = region_mapper   # 校準範圍 → 目前畫面像素（換了解析度時縮放）
+        self.serial_provider = serial_provider   # 畫面從哪台抓就往哪台滑（換實例時跟著換）
 
     def _resolve(self) -> Tuple[str, str]:
         path = self._adb_path or find_adb()
         self._adb_path = path
+        if self.serial_provider is not None:
+            current = self.serial_provider()
+            if current and current != self._resolved_serial and is_network_serial(current):
+                self._resolved_serial = current
         if self._resolved_serial is None:
             if is_network_serial(self._serial):
                 self._resolved_serial = resolve_network_serial(path, self._serial)
@@ -527,5 +569,5 @@ __all__ = [
     "AdbError", "AdbGrabber", "AdbController", "EmulatorAdbController", "locate_board",
     "find_adb", "list_devices", "pick_device", "screen_size",
     "is_network_serial", "ensure_connected", "decode_raw_screencap",
-    "resolve_network_serial", "scale_region",
+    "resolve_network_serial", "scale_region", "alive_emulators",
 ]

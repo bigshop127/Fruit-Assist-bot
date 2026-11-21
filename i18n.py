@@ -91,9 +91,7 @@ EN: Dict[str, str] = {
     "連不到模擬器「{serial}」，也沒找到其他開著 ADB 的模擬器。確認模擬器有開、設定裡的 ADB 有打開。":
         "Can't reach the emulator \"{serial}\" and found no other emulator with ADB enabled. "
         "Check the emulator is running and ADB is turned on in its settings.",
-    "連不到模擬器「{serial}」，但找到好幾台開著的：{others}。請在 ⚙ 設定填你正在玩的那一台。":
-        "Can't reach the emulator \"{serial}\", but found several running: {others}. "
-        "Enter the one you're playing on in ⚙ Settings.",
+    "盤面不在這台模擬器，改用 {serial}": "The board isn't on this emulator — switched to {serial}",
     "格子上的號碼跟樣板對不上，以號碼為準修正了 {n} 格": "The numbers on {n} cell(s) disagreed with the templates — corrected using the numbers",
     "往{a}滑了 {n} 次都沒反應（可能有格子認錯），改往{b}": "Swiping {a} did nothing {n} times (a cell may be misread); trying {b} instead",
     "畫面恢復正常，自動玩自己接回去了": "The board is readable again — auto-play resumed by itself",

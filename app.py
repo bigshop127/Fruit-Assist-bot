@@ -232,6 +232,7 @@ class Engine:
                 duration=cfg.swipe_ms / 1000.0,
                 fraction=cfg.swipe_fraction,
                 region_mapper=lambda r: mapper(r) if mapper else r,
+                serial_provider=lambda: getattr(self.grabber, "serial", None),
             )
         elif cfg.autoplay_method == "adb":
             self.controller = ADB.EmulatorAdbController(
@@ -255,6 +256,7 @@ class Engine:
         self._played_at = 0.0
         self._retry = 0
         self._unreadable_since: Optional[float] = None
+        self._switch_tried_at = 0.0
         # (盤面, 在這個盤面上滑了沒反應的方向)。多半是某格認錯、求解器以為能動，
         # 其實那個方向根本滑不動——換次佳方向，不要對著牆一直滑。
         self._blocked: Tuple[Optional[int], set] = (None, set())
@@ -367,6 +369,27 @@ class Engine:
         except OSError:
             pass
 
+    def _try_other_instance(self) -> Optional[str]:
+        """盤面讀不到時，看看是不是在另一台模擬器（BlueStacks「1」「2」輪流開）。
+        最多每 5 秒試一次（要對每台開著的模擬器各截一張圖）。"""
+        finder = getattr(self.grabber, "find_board_instance", None)
+        now = time.monotonic()
+        if finder is None or self.region is None or now - self._switch_tried_at < 5.0:
+            return None
+        self._switch_tried_at = now
+
+        def looks_like_board(crop: np.ndarray) -> bool:
+            r = self.rec.read(crop)
+            return r.ok and any(r.board_cells)
+
+        try:
+            serial = finder(self.region, looks_like_board)
+        except OSError:
+            return None
+        if serial:
+            self._log(tr("盤面不在這台模擬器，改用 {serial}", serial=serial))
+        return serial
+
     def _maybe_resume(self, board: int) -> str:
         """被暫時的狀況（遊戲彈窗、動畫太久、adb 一時沒回應）打斷的自動玩，
         畫面恢復正常、讀得懂盤面之後自己接回去。回傳要顯示的訊息（沒接就空字串）。"""
@@ -404,6 +427,9 @@ class Engine:
         try:
             img = self.grabber.grab(self.region)
         except (ValueError, OSError) as e:
+            switched = self._try_other_instance()
+            if switched:
+                return self._status("settling", tr("盤面不在這台模擬器，改用 {serial}", serial=switched))
             # adb 偶爾會一時沒回應；畫面抓得回來就自己接回去
             self.stop_autoplay(resumable=True)
             return self._status("error", tr("抓不到畫面：{e}", e=e))
@@ -415,6 +441,11 @@ class Engine:
             self._unreadable_since = None
         elif self._unreadable_since is None:
             self._unreadable_since = time.monotonic()
+
+        if not reading.ok and reading.looks_misaligned:
+            switched = self._try_other_instance()
+            if switched:
+                return self._status("settling", tr("盤面不在這台模擬器，改用 {serial}", serial=switched))
 
         if not reading.ok:
             self._confirming = None

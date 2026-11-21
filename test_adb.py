@@ -349,11 +349,9 @@ def main():
         check("原本那台又開了 → 回到原本那台",
               ADB.resolve_network_serial("adb", "127.0.0.1:5565") == "127.0.0.1:5565")
         alive = {"127.0.0.1:5555", "127.0.0.1:5575"}
-        try:
-            ADB.resolve_network_serial("adb", "127.0.0.1:5565")
-            check("好幾台開著 → 不亂猜、講清楚", False)
-        except ADB.AdbError as e:
-            check("好幾台開著 → 不亂猜、講清楚", "5555" in str(e) and "5575" in str(e), str(e))
+        ADB._REDIRECT.clear()
+        check("設定的那台關著、另外好幾台開著 → 先挑一台（盤面不在那台會再換）",
+              ADB.resolve_network_serial("adb", "127.0.0.1:5565") in alive)
         alive = set()
         try:
             ADB.resolve_network_serial("adb", "127.0.0.1:5565")
@@ -373,6 +371,39 @@ def main():
           g.map_region(region) == V.Region(376, 146, 519, 513), f"{g.map_region(region)}")
     check("沒記錄校準大小 → 不縮放（舊設定檔相容）",
           ADB.AdbGrabber(serial="x:1").map_region(region) == region)
+
+    print("10) 「1」「2」兩台模擬器同時開著：看哪一台畫面上真的有盤面就用哪一台，滑動也跟著換")
+    real = (ADB._try_connect, ADB._emulator_ports)
+    try:
+        ADB._REDIRECT.clear()
+        ADB._try_connect = lambda path, serial: serial in ("127.0.0.1:5555", "127.0.0.1:5565")
+        ADB._emulator_ports = lambda: [5555, 5565]
+        board_px = np.full((720, 1280, 3), 200, np.uint8)     # 「2」號：盤面在這
+        city_px = np.zeros((900, 1600, 3), np.uint8)          # 「1」號：在主城
+        shots = {"127.0.0.1:5555": city_px, "127.0.0.1:5565": board_px}
+        g = ADB.AdbGrabber(serial="127.0.0.1:5555", adb_path="adb", reference_size=(1600, 900))
+        g._resolved_serial = "127.0.0.1:5555"
+        g._screencap_from = lambda path, serial: shots[serial]
+        region = V.Region(470, 182, 649, 641)
+        found = g.find_board_instance(region, lambda crop: crop.mean() > 100)
+        check("換到畫面上有盤面的那台", found == "127.0.0.1:5565" and g.serial == "127.0.0.1:5565", f"{found}")
+        check("換過去之後照那台的解析度縮放", g.last_size == (1280, 720)
+              and g.map_region(region) == V.Region(376, 146, 519, 513), f"{g.map_region(region)}")
+        ctl = ADB.AdbController(serial="127.0.0.1:5555", adb_path="adb",
+                                serial_provider=lambda: g.serial, region_mapper=g.map_region)
+        real_run = ADB._run
+        fake = FakeRun([(0, b"", b"")])
+        ADB._run = fake
+        try:
+            ctl.play(region, S.LEFT)
+        finally:
+            ADB._run = real_run
+        check("滑動送到同一台（2 號）", fake.calls[0][:2] == ("-s", "127.0.0.1:5565"), f"{fake.calls}")
+        check("哪一台都沒有盤面 → 不亂換",
+              g.find_board_instance(region, lambda crop: False) is None and g.serial == "127.0.0.1:5565")
+    finally:
+        ADB._try_connect, ADB._emulator_ports = real
+        ADB._REDIRECT.clear()
 
     print()
     if _failures:

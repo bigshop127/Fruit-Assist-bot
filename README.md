@@ -110,6 +110,7 @@ Both versions are identical apart from the interface language. All versions: [Re
 
 小提醒：
 - 不用另外裝 adb——輔助器會自動找 BlueStacks／雷電／MuMu 附的 adb（電腦上有 Android SDK Platform-Tools 的話優先用它）。
+- **多開模擬器（例如 BlueStacks「1」「2」輪流玩）不用改設定**：填的那台沒開時，會自動改用開著的那台；兩台都開著時，會用畫面上真的有水果盤面的那一台。兩台解析度不同也沒關係，校準範圍會照比例換算。
 - 背景模式每看一次畫面約 0.25 秒，每一步比一般模式稍慢。
 - 也可以只把「操控方式」改成背景滑動、畫面來源維持螢幕擷取：一樣不搶滑鼠、每步比較快，但模擬器盤面要露在螢幕上不能被擋住。
 - 同時打別的遊戲覺得掉幀，可以在 ⚙ 把「思考時間」調低（例如 0.15）。
@@ -230,6 +231,7 @@ and it doesn't matter if the emulator is covered by other windows.
 Notes:
 - No separate adb install needed — the assistant finds the adb bundled with BlueStacks / LDPlayer / MuMu
   (Android SDK Platform-Tools is preferred if installed).
+- **Multiple emulator instances (e.g. BlueStacks "1" and "2") need no settings changes**: if the address you entered isn't running, it uses the one that is; if both are running, it uses the one actually showing the fruit board. Different resolutions are fine — the calibration is scaled automatically.
 - In background mode each screen read takes about 0.25 s, so every move is a little slower.
 - You can also switch only the input method to background swipe and keep screen capture: still mouse-free and faster per move,
   but the emulator's board must stay visible on screen.

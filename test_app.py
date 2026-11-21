@@ -435,6 +435,28 @@ def main():
         st = e.step()
         check("讀不懂超過寬限期才停", not e.autoplay and st.kind in ("unknown", "misaligned"), f"{st.kind}")
 
+        # BlueStacks「1」「2」輪流開：讀到的畫面不是盤面（整盤認不得）→ 去別台找
+        e, ctl = build_auto(animation_grace=0.0)
+        asked = []
+
+        def finder(region, looks_like_board):
+            asked.append(region)
+            e.rec.readable = True          # 換到正確那台之後就讀得懂了
+            return "127.0.0.1:5565"
+
+        e.grabber.find_board_instance = finder
+        e.autoplay = True
+        pump(e, 2)
+        e.rec.readable = False
+        st = e.step()
+        check("整盤認不得 → 去另一台模擬器找盤面", asked and "5565" in st.message, f"{st.kind}: {st.message}")
+        check("換台不會讓自動玩停下", e.autoplay)
+        st = e.step()
+        st = e.step()
+        check("換過去之後照常讀盤", st.kind in ("ok", "settling") and e.autoplay, f"{st.kind}")
+        st = e.step()
+        check("最多 5 秒才再試一次（不會每一幀都去掃）", len(asked) == 1, f"{len(asked)}")
+
         e, ctl = build_auto()
         e.autoplay = True
         original_panic = A.C.panic_pressed
