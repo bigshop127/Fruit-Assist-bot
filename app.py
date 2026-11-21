@@ -247,8 +247,13 @@ class Engine:
         self._solved_board: Optional[int] = None
         self._result: Optional[S.Result] = None
         self._played_board: Optional[int] = None
+        self._played_move: Optional[int] = None
         self._played_at = 0.0
         self._retry = 0
+        self._unreadable_since: Optional[float] = None
+        # (盤面, 在這個盤面上滑了沒反應的方向)。多半是某格認錯、求解器以為能動，
+        # 其實那個方向根本滑不動——換次佳方向，不要對著牆一直滑。
+        self._blocked: Tuple[Optional[int], set] = (None, set())
 
     def _status(self, kind: str, message: str = "", **kw) -> Status:
         return Status(kind, message, autoplay=self.autoplay,
@@ -335,6 +340,9 @@ class Engine:
 
     # 停下之後在這段時間內畫面恢復正常就自己接回去；超過就當成你不在了，不接
     RESUME_WINDOW = 600.0
+    # 自動玩中讀不懂盤面要持續這麼久才停手。合成動畫、任務彈窗一閃而過都只有一兩秒，
+    # 以前一閃就停、再自己接回，5 分鐘內接回 5 次就放棄——實際玩一下就撞到上限。
+    UNKNOWN_GRACE = 4.0
     # 短時間內自己接回去太多次代表有東西一直卡著，不要無止盡地停停走走
     RESUME_LIMIT = (5, 300.0)
 
@@ -399,8 +407,16 @@ class Engine:
 
         reading = self.rec.read(img)
 
+        if reading.ok:
+            self._unreadable_since = None
+        elif self._unreadable_since is None:
+            self._unreadable_since = time.monotonic()
+
         if not reading.ok:
             self._confirming = None
+            if (self.autoplay and len(self.db) > 0
+                    and time.monotonic() - self._unreadable_since < self.UNKNOWN_GRACE):
+                return self._status("settling", tr("畫面變動中…"), reading=reading)
             # 剛滑完的那一小段時間本來就讀不到完整盤面（水果正在飛），
             # 這時候跳「有 N 格沒見過」只會嚇到人，等動畫過了再判斷。
             if time.monotonic() - self._played_at < self.cfg.animation_grace:
@@ -429,7 +445,16 @@ class Engine:
             self._confirming = cells
             return self._status("settling", tr("畫面變動中…"), cells=cells, reading=reading)
 
-        learned = self._learn_from_badges(reading)
+        corrected = ""
+        cross_check = getattr(self.rec, "cross_check", None)
+        if cross_check is not None and S.from_list(cells) != self._solved_board:
+            reading, fixed = cross_check(reading)
+            if fixed:
+                cells = reading.board_cells
+                corrected = tr("格子上的號碼跟樣板對不上，以號碼為準修正了 {n} 格", n=len(fixed))
+                self._log(corrected + f"：{[(i, reading.cells[i]) for i in fixed]}")
+
+        learned = self._learn_from_badges(reading) or corrected
 
         board = S.from_list(cells)
         if board != self._solved_board or self._result is None:
@@ -443,7 +468,7 @@ class Engine:
 
         resumed = self._maybe_resume(board)
         if self.autoplay:
-            failure = self._play(board, self._result.best)
+            failure = self._play(board, self._pick_move(board))
             if failure is not None:
                 return failure
 
@@ -470,6 +495,14 @@ class Engine:
         names = tr("、").join(str(n) for n in sorted({int(l) for l in labels if l}))
         return tr("看格子上的數字認出 {names} 號水果，已經記起來了", names=names)
 
+    def _pick_move(self, board: int) -> int:
+        """最佳方向；這個盤面上已經證實滑不動的方向跳過，改用次佳。"""
+        blocked = self._blocked[1] if self._blocked[0] == board else set()
+        for ms in self._result.scores:
+            if ms.legal and ms.move not in blocked:
+                return ms.move
+        return self._result.best
+
     def _play(self, board: int, move: int) -> Optional[Status]:
         """自動操控：真的把這一步滑出去。回傳非 None 代表出事了、要顯示給使用者。"""
         now = time.monotonic()
@@ -485,8 +518,20 @@ class Engine:
             forget = getattr(self.controller, "forget", None)
             if forget is not None:
                 forget()   # 背景滑動：可能是盤面在模擬器裡的位置變了，下一次重新找
+            if self._retry > self.cfg.max_retries and self._played_move is not None:
+                # 這個方向在這個盤面滑不動：封鎖掉，還有別的合法方向就改走那個
+                if self._blocked[0] != board:
+                    self._blocked = (board, set())
+                self._blocked[1].add(self._played_move)
+                nxt = self._pick_move(board)
+                if nxt not in self._blocked[1]:
+                    self._log(tr("往{a}滑了 {n} 次都沒反應（可能有格子認錯），改往{b}",
+                                 a=tr(S.MOVE_NAME[self._played_move]), n=self._retry,
+                                 b=tr(S.MOVE_NAME[nxt])))
+                    self._retry = 0
+                    move = nxt
             if self._retry > self.cfg.max_retries:
-                # 多半是遊戲跳了彈窗擋住輸入；盤面之後自己變了（彈窗關掉）就接回去
+                # 每個方向都滑不動：多半是遊戲跳了彈窗擋住輸入；盤面之後自己變了就接回去
                 self.stop_autoplay(resumable=True, board=board, needs_change=True)
                 return self._status(
                     "stopped",
@@ -506,6 +551,7 @@ class Engine:
             return self._status("error", tr("送出操作失敗：{e}", e=e))
 
         self._played_board = board
+        self._played_move = move
         self._played_at = time.monotonic()
         self.moves_played += 1
         self._confirming = None  # 盤面即將改變，重新確認

@@ -437,6 +437,27 @@ def main():
     db.coarse = True
     check(f"{trials} 筆查詢，粗篩與暴力比對的判定全部一致", mismatch == 0, f"不一致 {mismatch} 筆")
 
+    print("16) 徽章號碼複核：樣板認錯時以格子上的號碼為準，認對時不能亂改")
+    # 正確的盤面：複核不能改動任何一格（各種干擾下也一樣）
+    for name, kw in [("原圖", {}), ("亮度 +30", dict(bright=30)), ("雜訊 ±12", dict(noise=12)),
+                     ("縮放 0.97", dict(scale=0.97))]:
+        r = rec.read(distort(full, TRUE_REGION, **kw))
+        r2, fixed = rec.cross_check(r)
+        check(f"讀對的盤面複核後不變（{name}）", fixed == [] and r2.cells == r.cells, f"{fixed}")
+    # 2026-11-21 實際案例：adb 擷取的盤面，鳳梨（9）被樣板認成芒果（8）
+    adb_img = np.asarray(Image.open(os.path.join(os.path.dirname(DEFAULT_SHOT), "adb_board_9as8.png")).convert("RGB"))
+    adb_truth = [5, 8, 11, 12, 3, 9, 2, 0, 4, 2, 1, 0, 1, 0, 0, 0]
+    adb_rec = V.Recognizer(V.Grid(4, 4, 0.047), V.TemplateDB())
+    crops9 = adb_rec.grid.crops(adb_img)
+    wrong = adb_truth.copy()
+    wrong[5] = 8
+    fake = V.Reading(wrong, [V.Match(v, 9.8, 4.7) for v in wrong], crops9, True, [])
+    r2, fixed = adb_rec.cross_check(fake)
+    check("鳳梨被認成 8 → 看號碼改回 9", r2.cells == adb_truth and fixed == [5], f"{r2.cells} {fixed}")
+    check("改過的格子列入要學的清單（下次樣板就認得）", 5 in r2.badge_indices)
+    r3, fixed3 = adb_rec.cross_check(fake._replace(cells=adb_truth))
+    check("同一張圖讀對時不改", fixed3 == [], f"{fixed3}")
+
     print()
     if _failures:
         print(f"有 {len(_failures)} 項失敗 ❌")

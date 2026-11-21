@@ -835,6 +835,32 @@ class Recognizer:
         cells = [m.label for m in matches]
         return Reading(cells, matches, crops, not unknown, unknown, from_badge)
 
+    def cross_check(self, reading: "Reading") -> Tuple["Reading", List[int]]:
+        """拿格子上印的號碼複核樣板比對的結果，回傳 (修正後的判讀, 被改掉的格子)。
+
+        2026-11-21 實際發生：換成 adb 擷取後盤面比例變了，鳳梨（9）最像的樣板
+        竟是一張芒果（8），距離 9.8 低於門檻、差距也夠大，於是被當成 8；求解器
+        以為往上能讓兩顆 8 合併，對著滑不動的方向一直滑。徽章上的「9」其實讀得
+        清清楚楚。所以：號碼讀得很確定、又跟樣板結果不同時，以號碼為準。
+        只檢查有水果的格子（空格沒有徽章），而且一盤只需要做一次（約 60ms），
+        由呼叫端在盤面穩定、換了新盤面時才叫。
+        """
+        cells = list(reading.cells)
+        matches = list(reading.matches)
+        fixed: List[int] = []
+        for i, (value, crop) in enumerate(zip(cells, reading.crops)):
+            if not value or i in reading.badge_indices:
+                continue
+            badge, margin = read_badge_number(badge_of(crop))
+            if badge is not None and badge != value:
+                cells[i] = badge
+                matches[i] = Match(badge, matches[i].distance, margin, "", "badge")
+                fixed.append(i)
+        if not fixed:
+            return reading, []
+        return reading._replace(cells=cells, matches=matches,
+                                badge_indices=sorted(set(reading.badge_indices) | set(fixed))), fixed
+
     def learn(self, crops: Sequence[np.ndarray], labels: Sequence[Optional[int]]) -> int:
         """把使用者標好的格子收進樣板庫，回傳實際新增的張數。"""
         added = 0

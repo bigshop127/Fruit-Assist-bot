@@ -232,6 +232,9 @@ def main():
                     return V.Reading(list(self.cells), [], [], True, [])
                 return V.Reading([None] * 16, [], [], False, list(range(16)))
 
+            def cross_check(self, reading):
+                return reading, []
+
         def build_auto(**over):
             c = A.Config.load()
             c.move_interval = 0.0
@@ -241,6 +244,7 @@ def main():
             for k, v in over.items():
                 setattr(c, k, v)
             e = A.Engine(c)
+            e.UNKNOWN_GRACE = 0.0   # 個別測試要測寬限期時再自己設
             e.grabber = FakeGrabber()
             e.rec = ScriptedRec(TRUE_BOARD)
             ctl = FakeController()
@@ -275,13 +279,15 @@ def main():
         e, ctl = build_auto()   # retry_after=0，模擬「滑了沒反應」
         e.autoplay = True
         st = None
-        for _ in range(20):
+        for _ in range(80):
             st = e.step()
             if st.kind == "stopped":
                 break
         check("一直沒反應會自動停手", st.kind == "stopped", f"{st.kind}: {st.message}")
         check("停手後 autoplay 關閉", not e.autoplay)
-        check("重試次數符合設定（1 次首發 + 2 次重試）", len(ctl.calls) == 3, f"{ctl.calls}")
+        n_legal = sum(1 for ms in e._result.scores if ms.legal)
+        check("重試次數符合設定（每個合法方向 1 次首發 + 2 次重試）", len(ctl.calls) == 3 * n_legal,
+              f"{ctl.calls}")
         check("訊息說得出原因", "沒變化" in st.message, st.message)
 
         e, ctl = build_auto(retry_after=99.0)
@@ -346,7 +352,7 @@ def main():
 
         e, ctl = build_auto()   # 滑了沒反應 → 停
         e.autoplay = True
-        for _ in range(20):
+        for _ in range(80):
             if e.step().kind == "stopped":
                 break
         pump(e, 4)
@@ -391,6 +397,43 @@ def main():
         e.rec.readable = True
         pump(e, 2)
         check("停太久（超過 10 分鐘）就不自己接", not e.autoplay)
+
+        # 2026-11-21：鳳梨被認成芒果，求解器一直要往上，往上其實滑不動 → 卡死。
+        # 滑了沒反應就封鎖這個方向、改走次佳；全部方向都試過才停。
+        e, ctl = build_auto()
+        e.autoplay = True
+        st = None
+        for _ in range(40):
+            st = e.step()
+            if st.kind == "stopped":
+                break
+        legal = [ms.move for ms in e._result.scores if ms.legal]
+        tried = list(dict.fromkeys(ctl.calls))
+        check("滑不動會換方向，把每個合法方向都試過", tried == legal, f"tried={tried} legal={legal}")
+        check("全部方向都滑不動才停手", st.kind == "stopped" and not e.autoplay, f"{st.kind}")
+
+        e, ctl = build_auto(retry_after=0.0)
+        e.autoplay = True
+        for _ in range(8):
+            e.step()
+        first = ctl.calls[0]
+        e.rec.cells = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 2]   # 換方向後盤面動了
+        n = len(ctl.calls)
+        pump(e, 2)
+        check("換方向成功、盤面變了之後照常繼續", e.autoplay and len(ctl.calls) > n and len(set(ctl.calls)) >= 2,
+              f"{ctl.calls}")
+
+        # 讀不懂的狀態要持續超過寬限期才停（合成動畫、彈窗一閃都只有一兩秒）
+        e, ctl = build_auto(animation_grace=0.0)
+        e.UNKNOWN_GRACE = 30.0
+        e.autoplay = True
+        pump(e, 2)
+        e.rec.readable = False
+        st = pump(e, 3)
+        check("短暫讀不懂不停手", e.autoplay and st.kind == "settling", f"{st.kind}")
+        e._unreadable_since -= 31
+        st = e.step()
+        check("讀不懂超過寬限期才停", not e.autoplay and st.kind in ("unknown", "misaligned"), f"{st.kind}")
 
         e, ctl = build_auto()
         e.autoplay = True
