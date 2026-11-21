@@ -121,6 +121,13 @@ python app.py
   又讀得懂就自己接（`Engine._maybe_resume`）；「滑了沒反應」那種要等盤面自己變了才接，免得空滑循環；5 分鐘內
   接回超過 5 次就放棄。遊戲結束、F8、暫停不接。每次停下／接回都寫一行到 `autoplay_log.txt`（gitignore），
   視窗上顯示「HH:MM 停止：原因」。藏著的視窗**不再**於停下時自己跳出來（會搶走前景遊戲的焦點）。
+- **換模擬器實例**（11/21）：設定的網路位址連不上時（例如設定「2」號 5565，實際開「1」號 5555），
+  `adb.resolve_network_serial` 先用 socket 探埠（bluestacks.conf 的 `status.adb_port`＋常見埠），剛好一台開著就改用它，
+  好幾台就報錯請使用者指定。不同實例解析度可能不同（1600x900 vs 1280x720），`adb_screen_size` 記校準當下的大小，
+  擷取與滑動都照比例縮放校準範圍（`AdbGrabber.map_region`）。
+- **徽章複核／換方向**（11/21）：鳳梨 9 被樣板認成芒果 8 → 求解器一直往上撞牆。盤面換新時用徽章號碼複核
+  （`Recognizer.cross_check`，以號碼為準並學起來）；同一方向滑了沒反應就封鎖改走次佳，全部方向都不動才停；
+  自動玩中讀不懂要持續 4 秒（`Engine.UNKNOWN_GRACE`）才停。
 - **完全背景**（11/21）：「畫面來源」選 adb、序號填模擬器位址（如 `127.0.0.1:5565`），擷取也走 adb，模擬器
   被蓋住（例如開全螢幕遊戲）照樣跑；此時操控自動用 `AdbController`。網路序號會先 `adb connect`，擷取改用
   `screencap` 原始格式（`decode_raw_screencap`，BlueStacks 1600x900 約 0.24 秒；PNG 約 0.53 秒），USB 手機維持 PNG。

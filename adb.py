@@ -151,6 +151,79 @@ def ensure_connected(adb_path: str, serial: Optional[str]) -> None:
         _run(adb_path, "connect", serial, timeout=8.0)
 
 
+# 常見模擬器的 adb 埠：BlueStacks 多開每個實例 +10（5555、5565…）、MuMu 7555／16384、夜神 62001
+_COMMON_EMU_PORTS = (5555, 5565, 5575, 5585, 5595, 7555, 16384, 16416, 62001, 62025)
+_BLUESTACKS_CONF = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"),
+                                "BlueStacks_nxt", "bluestacks.conf")
+_PORT_LINE = re.compile(r'^bst\.instance\.[^.]+\.status\.adb_port="(\d+)"', re.M)
+
+# 設定的模擬器位址連不上、自動改用的那一個（例如設定是「2」號實例，其實開的是「1」號）
+_REDIRECT: dict = {}
+
+
+def _emulator_ports() -> List[int]:
+    ports: List[int] = []
+    try:
+        with open(_BLUESTACKS_CONF, encoding="utf-8", errors="replace") as f:
+            ports += [int(x) for x in _PORT_LINE.findall(f.read())]
+    except OSError:
+        pass
+    return list(dict.fromkeys(ports + list(_COMMON_EMU_PORTS)))
+
+
+def _port_open(serial: str, timeout: float = 0.3) -> bool:
+    """先用 socket 看埠有沒有人在聽。`adb connect` 對沒開的埠要等好幾秒才放棄，
+    掃十個埠會卡近 20 秒；socket 被拒絕是立刻的。"""
+    import socket
+    host, _, port = serial.rpartition(":")
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def _try_connect(adb_path: str, serial: str) -> bool:
+    if not _port_open(serial):
+        return False
+    try:
+        out = _run(adb_path, "connect", serial, timeout=4.0).stdout.decode("utf-8", "replace")
+    except AdbError:
+        return False
+    if "connected to" not in out:
+        return False
+    return any(s == serial and st == "device" for s, st in list_devices(adb_path))
+
+
+def resolve_network_serial(adb_path: str, serial: str) -> str:
+    """模擬器位址連得上就用它；連不上就掃一遍常見埠，剛好找到一台開著的模擬器就改用它。
+
+    2026-11-21：使用者設定的是 BlueStacks「2」（5565），後來改開「1」（5555），
+    輔助器就一直報「看不到裝置」。多開的人換實例很常見，找得到唯一一台就自己跟過去。
+    """
+    if serial in _REDIRECT and _try_connect(adb_path, _REDIRECT[serial]):
+        return _REDIRECT[serial]
+    if _try_connect(adb_path, serial):
+        _REDIRECT.pop(serial, None)
+        return serial
+    host = serial.rsplit(":", 1)[0]
+    alive = [f"{host}:{port}" for port in _emulator_ports()
+             if f"{host}:{port}" != serial and _try_connect(adb_path, f"{host}:{port}")]
+    if len(alive) == 1:
+        _REDIRECT[serial] = alive[0]
+        return alive[0]
+    if not alive:
+        raise AdbError(_t("連不到模擬器「{serial}」，也沒找到其他開著 ADB 的模擬器。"
+                          "確認模擬器有開、設定裡的 ADB 有打開。", serial=serial))
+    raise AdbError(_t("連不到模擬器「{serial}」，但找到好幾台開著的：{others}。"
+                      "請在 ⚙ 設定填你正在玩的那一台。", serial=serial, others="、".join(alive)))
+
+
+def scale_region(region: V.Region, sx: float, sy: float) -> V.Region:
+    return V.Region(int(round(region.left * sx)), int(round(region.top * sy)),
+                    int(round(region.width * sx)), int(round(region.height * sy)))
+
+
 def decode_raw_screencap(data: bytes) -> np.ndarray:
     """解 `screencap`（不加 -p）的原始輸出：表頭（寬、高、格式[、色域]）＋RGBA。
 
@@ -178,19 +251,38 @@ class AdbGrabber:
     Engine.rebuild() 因為手機還沒接上就整個炸掉。
     """
 
-    def __init__(self, serial: Optional[str] = None, adb_path: Optional[str] = None) -> None:
+    def __init__(self, serial: Optional[str] = None, adb_path: Optional[str] = None,
+                 reference_size: Optional[Tuple[int, int]] = None) -> None:
         self.backend = "adb"
         self._adb_path = adb_path
         self._serial = serial
         self._resolved_serial: Optional[str] = None
+        # 校準當下的畫面大小。換到解析度不同的模擬器實例（同樣 16:9）時，校準範圍
+        # 照比例縮放就能直接用，不必重新校準。
+        self.reference_size = tuple(reference_size) if reference_size else None
+        self.last_size: Optional[Tuple[int, int]] = None
+
+    @property
+    def serial(self) -> Optional[str]:
+        """實際在用的序號（可能是自動改用的另一台模擬器）。"""
+        return self._resolved_serial or self._serial
 
     def _resolve(self) -> Tuple[str, str]:
         path = self._adb_path or find_adb()
         self._adb_path = path
         if self._resolved_serial is None:
-            ensure_connected(path, self._serial)
-            self._resolved_serial = pick_device(path, self._serial)
+            if is_network_serial(self._serial):
+                self._resolved_serial = resolve_network_serial(path, self._serial)
+            else:
+                self._resolved_serial = pick_device(path, self._serial)
         return path, self._resolved_serial
+
+    def map_region(self, region: V.Region) -> V.Region:
+        """校準範圍 → 目前這台畫面的像素範圍（解析度一樣就原封不動）。"""
+        if not self.reference_size or not self.last_size or self.last_size == self.reference_size:
+            return region
+        (rw, rh), (w, h) = self.reference_size, self.last_size
+        return scale_region(region, w / rw, h / rh)
 
     def _screencap(self) -> np.ndarray:
         path, serial = self._resolve()
@@ -219,6 +311,7 @@ class AdbGrabber:
         「超出畫面」。抓一張真的截圖來量，保證跟等一下 grab() 看到的一致。
         """
         h, w = self._screencap().shape[:2]
+        self.last_size = (w, h)
         return V.Region(0, 0, w, h)
 
     def grab(self, region: V.Region) -> np.ndarray:
@@ -226,6 +319,8 @@ class AdbGrabber:
             raise ValueError(f"擷取範圍不合法：{region}")
         full = self._screencap()
         h, w = full.shape[:2]
+        self.last_size = (w, h)
+        region = self.map_region(region)
         # 故意不夾住裁切範圍——手機解析度跟校準當下不一樣時（例如換了台裝置、
         # 螢幕轉向），裁出一塊尺寸不對的畫面丟給後面的格線辨識，只會產生一個
         # 看起來詭異的誤判，不如在這裡就直接講清楚「範圍對不上畫面」。
@@ -243,19 +338,23 @@ class AdbController:
     """
 
     def __init__(self, serial: Optional[str] = None, adb_path: Optional[str] = None,
-                 duration: float = 0.14, fraction: float = 0.35) -> None:
+                 duration: float = 0.14, fraction: float = 0.35,
+                 region_mapper=None) -> None:
         self._adb_path = adb_path
         self._serial = serial
         self._resolved_serial: Optional[str] = None
         self.duration = duration
         self.fraction = fraction
+        self.region_mapper = region_mapper   # 校準範圍 → 目前畫面像素（換了解析度時縮放）
 
     def _resolve(self) -> Tuple[str, str]:
         path = self._adb_path or find_adb()
         self._adb_path = path
         if self._resolved_serial is None:
-            ensure_connected(path, self._serial)
-            self._resolved_serial = pick_device(path, self._serial)
+            if is_network_serial(self._serial):
+                self._resolved_serial = resolve_network_serial(path, self._serial)
+            else:
+                self._resolved_serial = pick_device(path, self._serial)
         return path, self._resolved_serial
 
     def play(self, region: V.Region, move: int) -> None:
@@ -263,11 +362,14 @@ class AdbController:
             path, serial = self._resolve()
         except AdbError as e:
             raise C.InputError(str(e)) from e
+        if self.region_mapper is not None:
+            region = self.region_mapper(region)
         x0, y0, x1, y1 = C.swipe_points(region, move, self.fraction)
         ms = max(50, int(self.duration * 1000))
         proc = _run(path, "-s", serial, "shell", "input", "swipe",
                     str(x0), str(y0), str(x1), str(y1), str(ms), timeout=8.0)
         if proc.returncode != 0:
+            self._resolved_serial = None
             raise C.InputError(f"adb 送滑動失敗：{proc.stderr.decode('utf-8', 'replace').strip()}")
 
 
@@ -372,7 +474,10 @@ class EmulatorAdbController:
         if self._adb_path is None:
             self._adb_path = find_adb()
         if not self._connected:
-            ensure_connected(self._adb_path, self.serial)
+            if is_network_serial(self.serial):
+                self.serial = resolve_network_serial(self._adb_path, self.serial)
+            else:
+                ensure_connected(self._adb_path, self.serial)
             self._connected = True
         return self._adb_path
 
@@ -422,4 +527,5 @@ __all__ = [
     "AdbError", "AdbGrabber", "AdbController", "EmulatorAdbController", "locate_board",
     "find_adb", "list_devices", "pick_device", "screen_size",
     "is_network_serial", "ensure_connected", "decode_raw_screencap",
+    "resolve_network_serial", "scale_region",
 ]

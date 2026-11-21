@@ -131,6 +131,7 @@ class Config:
     # -- 畫面來源：screen＝PC 模擬器截圖（原本的路），adb＝USB 接實體手機 --
     capture_source: str = "screen"
     adb_serial: Optional[str] = None    # 多台裝置時指定序號；留白就自動挑「唯一一台已授權」的
+    adb_screen_size: Optional[List[int]] = None  # adb 校準當下的畫面大小；換了解析度就照比例縮放範圍
 
     # 介面語言 "zh" / "en"；None＝跟著下載的版本（中文版 exe / 英文版 exe）。
     # 實際讀取在 i18n.py（啟動當下就要決定），這裡只是讓存檔時不會把它吃掉。
@@ -200,7 +201,8 @@ class Engine:
 
     def _build_grabber(self):
         if self.cfg.capture_source == "adb":
-            return ADB.AdbGrabber(serial=self.cfg.adb_serial)
+            return ADB.AdbGrabber(serial=self.cfg.adb_serial,
+                                  reference_size=self.cfg.adb_screen_size)
         return V.ScreenGrabber()
 
     def refresh_capture_backend(self) -> None:
@@ -224,10 +226,12 @@ class Engine:
         self.solver = S.Solver(spawn=[tuple(x) for x in cfg.spawn])
         self.region = V.Region.from_dict(cfg.region) if cfg.region else None
         if cfg.capture_source == "adb":
+            mapper = getattr(self.grabber, "map_region", None)
             self.controller = ADB.AdbController(
                 serial=cfg.adb_serial,
                 duration=cfg.swipe_ms / 1000.0,
                 fraction=cfg.swipe_fraction,
+                region_mapper=lambda r: mapper(r) if mapper else r,
             )
         elif cfg.autoplay_method == "adb":
             self.controller = ADB.EmulatorAdbController(
@@ -1936,6 +1940,10 @@ class AssistApp(tk.Tk):
         anchor = self._detect_window_anchor(region) if self.cfg.capture_source == "screen" else None
         with self.lock:
             self.cfg.region = region.to_dict()
+            if self.cfg.capture_source == "adb":
+                size = getattr(self.engine.grabber, "last_size", None)
+                self.cfg.adb_screen_size = list(size) if size else None
+                self.engine.grabber.reference_size = tuple(size) if size else None
             if inset is not None:
                 self.cfg.inset = float(inset)
             self.cfg.window_anchor = anchor

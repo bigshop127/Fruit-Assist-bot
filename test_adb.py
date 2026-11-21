@@ -267,10 +267,13 @@ def main():
     buf = io.BytesIO()
     dev.save(buf, format="PNG")
     real_run = ADB._run
+    real_port_open = ADB._port_open
     try:
         ADB.EmulatorAdbController._cache.clear()
-        fake = FakeRun([(0, b"connected", b""), (0, buf.getvalue(), b""), (0, b"", b""), (0, b"", b"")])
+        devs = (0, b"List of devices attached\n127.0.0.1:5565\tdevice\n", b"")
+        fake = FakeRun([(0, b"connected to 127.0.0.1:5565", b""), devs, (0, buf.getvalue(), b""), (0, b"", b""), (0, b"", b"")])
         ADB._run = fake
+        ADB._port_open = lambda serial, timeout=0.3: True   # 不要真的去敲本機的埠
         ctl = ADB.EmulatorAdbController("127.0.0.1:5565", lambda: screen_board,
                                         adb_path="adb", duration=0.15)
         screen_region = V.Region(500, 400, 448, 454)
@@ -280,7 +283,7 @@ def main():
         check("網路序號會先 adb connect", cmds[0] == ("connect", "127.0.0.1:5565"), f"{cmds[0]}")
         check("只截一次圖（位置有記住）",
               sum(1 for c in cmds if "screencap" in c) == 1, f"{cmds}")
-        swipe = cmds[2]
+        swipe = cmds[3]
         x0, y0, x1, y1 = (int(v) for v in swipe[5:9])
         check("滑動在裝置座標、落在盤面裡、往左",
               161 <= x1 < x0 <= 866 and 335 <= y0 <= 1050 and y0 == y1, f"{swipe}")
@@ -297,6 +300,7 @@ def main():
             check("找不到盤面要轉成 InputError", "找不到盤面" in str(e), str(e))
     finally:
         ADB._run = real_run
+        ADB._port_open = real_port_open
         ADB.EmulatorAdbController._cache.clear()
 
     print("8) 模擬器（網路序號）：先 adb connect、擷取走原始格式")
@@ -318,9 +322,10 @@ def main():
     real_run = ADB._run
     try:
         raw = struct.pack("<4I", w, h, 1, 0) + px.tobytes()
-        fake = FakeRun([(0, b"connected", b""), (0, b"List of devices attached\n127.0.0.1:5565\tdevice\n", b""),
+        fake = FakeRun([(0, b"connected to 127.0.0.1:5565", b""), (0, b"List of devices attached\n127.0.0.1:5565\tdevice\n", b""),
                         (0, raw, b"")])
         ADB._run = fake
+        ADB._port_open = lambda serial, timeout=0.3: True
         g = ADB.AdbGrabber(serial="127.0.0.1:5565", adb_path="adb")
         img = g.grab(V.Region(0, 0, w, h))
         check("先 connect 再挑裝置", fake.calls[0] == ("connect", "127.0.0.1:5565"), f"{fake.calls}")
@@ -329,6 +334,45 @@ def main():
         check("擷取結果正確", img.shape == (h, w, 3))
     finally:
         ADB._run = real_run
+        ADB._port_open = real_port_open
+
+    print("9) 換了模擬器實例：設定的位址連不上就找唯一開著的那台；解析度不同就照比例縮放")
+    real = (ADB._try_connect, ADB._emulator_ports)
+    try:
+        ADB._REDIRECT.clear()
+        alive = {"127.0.0.1:5555"}
+        ADB._try_connect = lambda path, serial: serial in alive
+        ADB._emulator_ports = lambda: [5555, 5565, 5575]
+        check("設定 5565、只有 5555 開著 → 改用 5555",
+              ADB.resolve_network_serial("adb", "127.0.0.1:5565") == "127.0.0.1:5555")
+        alive = {"127.0.0.1:5565"}
+        check("原本那台又開了 → 回到原本那台",
+              ADB.resolve_network_serial("adb", "127.0.0.1:5565") == "127.0.0.1:5565")
+        alive = {"127.0.0.1:5555", "127.0.0.1:5575"}
+        try:
+            ADB.resolve_network_serial("adb", "127.0.0.1:5565")
+            check("好幾台開著 → 不亂猜、講清楚", False)
+        except ADB.AdbError as e:
+            check("好幾台開著 → 不亂猜、講清楚", "5555" in str(e) and "5575" in str(e), str(e))
+        alive = set()
+        try:
+            ADB.resolve_network_serial("adb", "127.0.0.1:5565")
+            check("都沒開 → 清楚的錯誤", False)
+        except ADB.AdbError as e:
+            check("都沒開 → 清楚的錯誤", "5565" in str(e), str(e))
+    finally:
+        ADB._try_connect, ADB._emulator_ports = real
+        ADB._REDIRECT.clear()
+
+    g = ADB.AdbGrabber(serial="127.0.0.1:5565", reference_size=(1600, 900))
+    region = V.Region(470, 182, 649, 641)
+    g.last_size = (1600, 900)
+    check("解析度一樣 → 範圍不變", g.map_region(region) == region)
+    g.last_size = (1280, 720)
+    check("1600x900 校準、換到 1280x720 → 照比例縮成 0.8 倍",
+          g.map_region(region) == V.Region(376, 146, 519, 513), f"{g.map_region(region)}")
+    check("沒記錄校準大小 → 不縮放（舊設定檔相容）",
+          ADB.AdbGrabber(serial="x:1").map_region(region) == region)
 
     print()
     if _failures:
