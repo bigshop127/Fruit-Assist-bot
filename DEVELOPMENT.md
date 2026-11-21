@@ -109,7 +109,13 @@ python app.py
 - **隱藏**：「隱藏 F9」或全域按 `hide_key`（預設 F9，⚙ 可換，不能跟緊急停止鍵同一個）→ `withdraw()`，
   背景偵測與自動玩照跑；再按一次叫回。藏起來期間自動玩從開變關（不管原因）會自動叫回視窗。
   藏起來時 `_overlaps_board()` 一律當沒蓋住。**注意：滑鼠滑動模式仍然會借用游標**，藏視窗只解決「擋畫面」，
-  不解決「搶滑鼠」。
+  不解決「搶滑鼠」——要邊跑邊用電腦請用下面的背景滑動。
+- **背景滑動**（`autoplay_method="adb"`，`adb.EmulatorAdbController`）：畫面照樣用 mss 截 PC 螢幕，只有「滑」
+  改成 `adb -s <emu_adb_serial> shell input swipe`。螢幕座標 → 模擬器像素的對應不去猜 BlueStacks 版面，
+  而是第一次滑之前抓一張 adb 截圖，拿螢幕上那塊盤面做多尺度標準化互相關（FFT，約 0.8 秒）找出盤面在模擬器
+  裡的位置，以 (序號, 盤面寬, 高) 快取；連續滑了沒反應時清快取重找。相似度 < 0.55 就停手並說明。
+  BlueStacks 的 ADB 開關是 `C:\ProgramData\BlueStacks_nxtluestacks.conf` 的 `bst.enable_adb_access`，
+  改完要重開模擬器；多開實例的埠號在 `bst.instance.<名稱>.adb_port`。
 - **魚符計算**（`fishcalc.py`，測試 `test_fishcalc.py`）：n 號＝2^(n-1) 顆 1 號，1 魚符＝1 顆 1 號。
   總值＝盤面換算＋魚符，能湊出的最大 2 的次方就是理論上限；水果只到 12 號，再上去用「12 號 ×k」。
   另外列出下三個目標各要幾個魚符、還差幾個。是完美合成的上限，不考慮 16 格放不下。

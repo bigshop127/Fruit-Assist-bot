@@ -109,7 +109,8 @@ class Config:
     # -- 自動操控 --
     # 注意：「現在是不是自動玩」刻意不存檔。每次啟動都要人工按一次才會動，
     # 免得程式一開就突然開始搶滑鼠。
-    autoplay_method: str = "swipe"      # swipe / arrows / wasd
+    autoplay_method: str = "swipe"      # swipe / arrows / wasd / adb（模擬器背景滑動，不搶滑鼠）
+    emu_adb_serial: str = "127.0.0.1:5565"  # adb 背景滑動要連的模擬器（BlueStacks 多開每個實例埠號不同）
     swipe_fraction: float = 0.35        # 滑動距離佔盤面短邊的比例
     swipe_ms: int = 140                 # 一次滑動花多久
     swipe_steps: int = 14               # 拆成幾個中間點（太少會被當成瞬移）
@@ -217,6 +218,13 @@ class Engine:
         if cfg.capture_source == "adb":
             self.controller = ADB.AdbController(
                 serial=cfg.adb_serial,
+                duration=cfg.swipe_ms / 1000.0,
+                fraction=cfg.swipe_fraction,
+            )
+        elif cfg.autoplay_method == "adb":
+            self.controller = ADB.EmulatorAdbController(
+                serial=cfg.emu_adb_serial,
+                board_provider=lambda: self.last_image,
                 duration=cfg.swipe_ms / 1000.0,
                 fraction=cfg.swipe_fraction,
             )
@@ -416,6 +424,9 @@ class Engine:
             if now - self._played_at < self.cfg.retry_after:
                 return None
             self._retry += 1
+            forget = getattr(self.controller, "forget", None)
+            if forget is not None:
+                forget()   # 背景滑動：可能是盤面在模擬器裡的位置變了，下一次重新找
             if self._retry > self.cfg.max_retries:
                 self.stop_autoplay()
                 return self._status(
@@ -1134,7 +1145,8 @@ class LabelDialog(tk.Toplevel):
 # ---------------------------------------------------------------- 設定
 
 METHOD_LABELS = {
-    "swipe": tr("滑鼠滑動（推薦）"),
+    "adb": tr("背景滑動（模擬器 adb，不搶滑鼠）"),
+    "swipe": tr("滑鼠滑動"),
     "arrows": tr("鍵盤方向鍵"),
     "wasd": tr("鍵盤 W A S D"),
 }
@@ -1192,7 +1204,9 @@ class SettingsDialog(tk.Toplevel):
         right.grid(row=0, column=1, sticky="n", padx=(24, 0))
         self._choice_row(right, tr("操控方式"), "autoplay_method",
                          METHOD_LABELS, cfg.autoplay_method,
-                         tr("模擬器有設按鍵對應才選鍵盤"))
+                         tr("背景滑動要先在模擬器設定開 ADB；鍵盤要模擬器有設按鍵對應"))
+        self._text_row(right, tr("模擬器 adb 位址"), "emu_adb_serial", cfg.emu_adb_serial,
+                       tr("BlueStacks 設定→進階→ADB 那裡寫的，例如 127.0.0.1:5565"))
         self._choice_row(right, tr("緊急停止鍵"), "panic_key",
                          {k: k for k in C.PANIC_KEYS}, cfg.panic_key,
                          tr("按下去就立刻停手，不用切視窗"))
@@ -1313,6 +1327,7 @@ class SettingsDialog(tk.Toplevel):
             self.hint.config(text=tr("「隱藏視窗鍵」不能跟「緊急停止鍵」用同一個鍵"))
             return
         parsed["adb_serial"] = self.vars["adb_serial"].get().strip() or None
+        parsed["emu_adb_serial"] = self.vars["emu_adb_serial"].get().strip() or "127.0.0.1:5565"
 
         source_changed = parsed["capture_source"] != self.app.cfg.capture_source
         backend_changed = source_changed or parsed["adb_serial"] != self.app.cfg.adb_serial
@@ -1934,6 +1949,7 @@ class AssistApp(tk.Tk):
             return
 
         how = {"swipe": tr("在盤面中央用滑鼠滑動"),
+               "adb": tr("透過 adb 在模擬器裡滑動（不會動到你的滑鼠）"),
                "arrows": tr("按方向鍵"),
                "wasd": tr("按 W / A / S / D")}[self.cfg.autoplay_method]
         if not messagebox.askyesno(

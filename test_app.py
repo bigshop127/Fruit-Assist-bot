@@ -785,7 +785,7 @@ def main():
             settings = A.SettingsDialog(ui)
             ui.update()
             method_var, method_map = settings.vars["autoplay_method"]
-            check("設定視窗有操控方式下拉選單", set(method_map.values()) == set(A.C.Controller.METHODS),
+            check("設定視窗有操控方式下拉選單", set(method_map.values()) == set(A.C.Controller.METHODS) | {"adb"},
                   f"{sorted(method_map.values())}")
             method_var.set(A.METHOD_LABELS["arrows"])
             settings._apply()

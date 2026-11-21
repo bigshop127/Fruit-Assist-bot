@@ -248,6 +248,57 @@ def main():
     finally:
         _shutil.which = real_which
 
+    print("7) 模擬器背景滑動：在模擬器截圖裡找出盤面、照裝置座標送 input swipe")
+    shot = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "testdata", "board.png")).convert("RGB")
+    l, t, r, b = 41, 35, 746, 750
+    screen_board = np.asarray(shot.crop((l, t, r, b)).resize((448, 454)))   # 螢幕上看到的盤面
+    for sc, (ox, oy), (W, H) in [(1.0, (120, 300), (900, 1600)), (0.45, (400, 200), (1600, 900))]:
+        dev = Image.new("RGB", (W, H), (40, 60, 90))
+        dev.paste(shot.resize((int(shot.width * sc), int(shot.height * sc))), (ox, oy))
+        got, score = ADB.locate_board(np.asarray(dev), screen_board)
+        want = (ox + l * sc, oy + t * sc, (r - l) * sc, (b - t) * sc)
+        err = max(abs(a - w) for a, w in zip(got, want))
+        check(f"縮放 {sc}：找到的位置誤差 ≤ 6px、分數夠高", err <= 6 and score > 0.8,
+              f"got={tuple(got)} want={tuple(int(v) for v in want)} score={score:.2f}")
+
+    dev = Image.new("RGB", (900, 1600), (40, 60, 90))
+    dev.paste(shot, (120, 300))
+    buf = io.BytesIO()
+    dev.save(buf, format="PNG")
+    real_run = ADB._run
+    try:
+        ADB.EmulatorAdbController._cache.clear()
+        fake = FakeRun([(0, b"connected", b""), (0, buf.getvalue(), b""), (0, b"", b""), (0, b"", b"")])
+        ADB._run = fake
+        ctl = ADB.EmulatorAdbController("127.0.0.1:5565", lambda: screen_board,
+                                        adb_path="adb", duration=0.15)
+        screen_region = V.Region(500, 400, 448, 454)
+        ctl.play(screen_region, S.LEFT)
+        ctl.play(screen_region, S.LEFT)
+        cmds = [c for c in fake.calls]
+        check("網路序號會先 adb connect", cmds[0] == ("connect", "127.0.0.1:5565"), f"{cmds[0]}")
+        check("只截一次圖（位置有記住）",
+              sum(1 for c in cmds if "screencap" in c) == 1, f"{cmds}")
+        swipe = cmds[2]
+        x0, y0, x1, y1 = (int(v) for v in swipe[5:9])
+        check("滑動在裝置座標、落在盤面裡、往左",
+              161 <= x1 < x0 <= 866 and 335 <= y0 <= 1050 and y0 == y1, f"{swipe}")
+
+        ADB.EmulatorAdbController._cache.clear()
+        blank = io.BytesIO()
+        Image.new("RGB", (900, 1600), (40, 60, 90)).save(blank, format="PNG")
+        ADB._run = FakeRun([(0, blank.getvalue(), b"")])
+        ctl._connected = True
+        try:
+            ctl.play(screen_region, S.LEFT)
+            check("找不到盤面要轉成 InputError", False)
+        except C.InputError as e:
+            check("找不到盤面要轉成 InputError", "找不到盤面" in str(e), str(e))
+    finally:
+        ADB._run = real_run
+        ADB.EmulatorAdbController._cache.clear()
+
     print()
     if _failures:
         print(f"有 {len(_failures)} 項失敗 ❌")

@@ -222,7 +222,155 @@ class AdbController:
             raise C.InputError(f"adb 送滑動失敗：{proc.stderr.decode('utf-8', 'replace').strip()}")
 
 
+# ---------------------------------------------------------------- 模擬器背景滑動
+
+def _gray(img: np.ndarray) -> np.ndarray:
+    img = np.asarray(img, dtype=np.float32)
+    if img.ndim == 3:
+        img = img[..., :3] @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    return img
+
+
+def _resize(gray: np.ndarray, w: int, h: int) -> np.ndarray:
+    im = Image.fromarray(gray.astype(np.float32), mode="F")
+    return np.asarray(im.resize((max(1, w), max(1, h)), Image.BILINEAR), dtype=np.float32)
+
+
+def _ncc_map(image: np.ndarray, tmpl: np.ndarray) -> np.ndarray:
+    """標準化互相關（FFT 版），回傳每個左上角位置的分數（-1～1）。"""
+    H, W = image.shape
+    h, w = tmpl.shape
+    t = tmpl - tmpl.mean()
+    t_norm = float(np.sqrt((t * t).sum()))
+    if t_norm < 1e-6:
+        return np.full((H - h + 1, W - w + 1), -1.0, dtype=np.float32)
+    shape = (H, W)
+    corr = np.fft.irfft2(np.fft.rfft2(image, shape) * np.conj(np.fft.rfft2(t, shape)), shape)
+    corr = corr[:H - h + 1, :W - w + 1]
+
+    def box(a: np.ndarray) -> np.ndarray:
+        c = np.pad(a, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+        return c[h:, w:] - c[:-h, w:] - c[h:, :-w] + c[:-h, :-w]
+
+    n = h * w
+    s1 = box(image.astype(np.float64))
+    s2 = box(image.astype(np.float64) ** 2)
+    var = s2 - s1 * s1 / n
+    # 幾乎單色的區域（背景、黑邊）分母趨近 0，算出來的分數會爆表，直接排除
+    flat = var < n * 4.0
+    score = corr / (np.sqrt(np.maximum(var, 1e-6)) * t_norm)
+    score[flat] = -1.0
+    return np.clip(score, -1.0, 1.0).astype(np.float32)
+
+
+def locate_board(device_img: np.ndarray, board_img: np.ndarray,
+                 work: int = 480) -> Tuple[V.Region, float]:
+    """在模擬器自己的截圖（裝置像素）裡找出盤面在哪。
+
+    輔助器是在 PC 螢幕上框盤面的，adb 送手勢卻要用模擬器內部的像素座標，
+    兩者差一個縮放＋位移，而且會隨模擬器視窗大小、BlueStacks 側邊欄、標題列
+    改變。與其去猜視窗版面，不如直接拿「螢幕上那塊盤面」去模擬器截圖裡比對：
+    多個縮放比例各做一次標準化互相關，取分數最高的。回傳 (裝置座標範圍, 分數)。
+    """
+    dev = _gray(device_img)
+    brd = _gray(board_img)
+    H, W = dev.shape
+    f = work / max(H, W)
+    small = _resize(dev, int(W * f), int(H * f))
+    sh, sw = small.shape
+    bh, bw = brd.shape
+
+    best = (-2.0, 0, 0, 1.0)
+    scale = 0.25
+    while scale <= 5.0:
+        tw, th = int(round(bw * scale * f)), int(round(bh * scale * f))
+        if 16 <= tw <= sw and 16 <= th <= sh:
+            score_map = _ncc_map(small, _resize(brd, tw, th))
+            idx = int(np.argmax(score_map))
+            y, x = divmod(idx, score_map.shape[1])
+            score = float(score_map[y, x])
+            if score > best[0]:
+                best = (score, x, y, scale)
+        scale *= 1.03
+
+    score, x, y, scale = best
+    region = V.Region(int(round(x / f)), int(round(y / f)),
+                      int(round(bw * scale)), int(round(bh * scale)))
+    return region, score
+
+
+class EmulatorAdbController:
+    """PC 模擬器（BlueStacks 等）用 adb 送滑動，不碰真的滑鼠、不搶焦點。
+
+    畫面還是從 PC 螢幕截（快），只有「滑」改走 adb。第一次滑之前抓一張
+    模擬器截圖，用 locate_board 找出盤面在模擬器裡的位置並記住；盤面大小
+    （校準）變了、或連續滑了沒反應時重新找。
+    """
+
+    MIN_SCORE = 0.55
+    _cache: dict = {}   # (序號, 盤面寬, 盤面高) → 裝置座標範圍；換校準才會失效
+
+    def __init__(self, serial: str, board_provider, adb_path: Optional[str] = None,
+                 duration: float = 0.14, fraction: float = 0.35) -> None:
+        self.serial = serial
+        self.board_provider = board_provider    # 回傳目前螢幕上那塊盤面的影像
+        self._adb_path = adb_path
+        self._connected = False
+        self.duration = duration
+        self.fraction = fraction
+
+    def _path(self) -> str:
+        if self._adb_path is None:
+            self._adb_path = find_adb()
+        if not self._connected and ":" in self.serial:
+            # 127.0.0.1:5565 這種網路序號要先 connect 一次（已連上的話是無害的）
+            _run(self._adb_path, "connect", self.serial, timeout=8.0)
+            self._connected = True
+        return self._adb_path
+
+    def _key(self, region: V.Region) -> tuple:
+        return (self.serial, region.width, region.height)
+
+    def forget(self) -> None:
+        for k in [k for k in self._cache if k[0] == self.serial]:
+            del self._cache[k]
+
+    def device_region(self, region: V.Region) -> V.Region:
+        key = self._key(region)
+        if key in self._cache:
+            return self._cache[key]
+        path = self._path()
+        proc = _run(path, "-s", self.serial, "exec-out", "screencap", "-p", timeout=8.0)
+        if proc.returncode != 0 or not proc.stdout:
+            raise AdbError(_t("抓不到模擬器畫面（adb {serial}）：{err}", serial=self.serial,
+                              err=proc.stderr.decode("utf-8", "replace").strip()))
+        dev = np.asarray(Image.open(io.BytesIO(proc.stdout)).convert("RGB"))
+        board = self.board_provider()
+        if board is None:
+            raise AdbError(_t("還沒抓到盤面畫面，等一下再試"))
+        found, score = locate_board(dev, board)
+        if score < self.MIN_SCORE:
+            raise AdbError(_t("在模擬器畫面裡找不到盤面（相似度 {score:.2f}）。確認 adb 連的是正在玩的那個模擬器（{serial}）。",
+                              score=score, serial=self.serial))
+        self._cache[key] = found
+        return found
+
+    def play(self, region: V.Region, move: int) -> None:
+        try:
+            dev_region = self.device_region(region)
+            path = self._path()
+        except AdbError as e:
+            raise C.InputError(str(e)) from e
+        x0, y0, x1, y1 = C.swipe_points(dev_region, move, self.fraction)
+        ms = max(50, int(self.duration * 1000))
+        proc = _run(path, "-s", self.serial, "shell", "input", "swipe",
+                    str(x0), str(y0), str(x1), str(y1), str(ms), timeout=8.0)
+        if proc.returncode != 0:
+            raise C.InputError(_t("adb 送滑動失敗：{err}",
+                                  err=proc.stderr.decode("utf-8", "replace").strip()))
+
+
 __all__ = [
-    "AdbError", "AdbGrabber", "AdbController",
+    "AdbError", "AdbGrabber", "AdbController", "EmulatorAdbController", "locate_board",
     "find_adb", "list_devices", "pick_device", "screen_size",
 ]

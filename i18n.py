@@ -88,6 +88,20 @@ EN: Dict[str, str] = {
     "  {name}：要 {need:,} 魚符 ✓": "  {name}: needs {need:,} tokens ✓",
     "理論值：假設每顆都完美合進去，實際會低一點": "Theoretical: assumes every fruit merges perfectly",
     "隱藏視窗鍵": "Hide-window key",
+    "背景滑動（模擬器 adb，不搶滑鼠）": "Background swipe (emulator adb, mouse stays free)",
+    "滑鼠滑動": "Mouse swipe",
+    "背景滑動要先在模擬器設定開 ADB；鍵盤要模擬器有設按鍵對應":
+        "Background swipe needs ADB enabled in the emulator; keyboard needs key mapping in the emulator",
+    "模擬器 adb 位址": "Emulator adb address",
+    "BlueStacks 設定→進階→ADB 那裡寫的，例如 127.0.0.1:5565":
+        "Shown in BlueStacks Settings → Advanced → ADB, e.g. 127.0.0.1:5565",
+    "透過 adb 在模擬器裡滑動（不會動到你的滑鼠）": "swipe inside the emulator through adb (your mouse is not touched)",
+    "抓不到模擬器畫面（adb {serial}）：{err}": "Couldn't capture the emulator screen (adb {serial}): {err}",
+    "還沒抓到盤面畫面，等一下再試": "The board hasn't been captured yet — try again in a moment",
+    "在模擬器畫面裡找不到盤面（相似度 {score:.2f}）。確認 adb 連的是正在玩的那個模擬器（{serial}）。":
+        "Couldn't find the board in the emulator screen (similarity {score:.2f}). "
+        "Check that adb points at the emulator you're playing in ({serial}).",
+    "adb 送滑動失敗：{err}": "adb swipe failed: {err}",
     "按一下藏起來、再按一下叫回來": "Press once to hide, again to show",
     "「隱藏視窗鍵」不能跟「緊急停止鍵」用同一個鍵": "The hide key can't be the same as the emergency-stop key",
     "往 {dir} 滑": "Swipe {dir}",
@@ -202,7 +216,6 @@ EN: Dict[str, str] = {
 
     # ---- 設定
     "設定": "Settings",
-    "滑鼠滑動（推薦）": "Mouse swipe (recommended)",
     "鍵盤方向鍵": "Keyboard arrow keys",
     "鍵盤 W A S D": "Keyboard W A S D",
     "PC 模擬器（螢幕擷取）": "PC emulator (screen capture)",
@@ -226,7 +239,6 @@ EN: Dict[str, str] = {
     "偵測與求解": "Detection & solving",
     "自動操控": "Auto-play",
     "操控方式": "Input method",
-    "模擬器有設按鍵對應才選鍵盤": "Only pick keyboard if the emulator has key mappings set up",
     "緊急停止鍵": "Emergency stop key",
     "按下去就立刻停手，不用切視窗": "Stops immediately, no need to switch windows",
     "畫面來源": "Screen source",
